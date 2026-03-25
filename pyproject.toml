@@ -8,8 +8,20 @@ license = "Apache-2.0"
 repository = "https://github.com/VectorInstitute/AgentFinVQA"
 requires-python = ">=3.12"
 dependencies = [
-    "filelock==3.25.2",
-    "urllib3==2.6.3",
+    "datasets>=4.0.0",
+    "ipykernel>=6.29.5",
+    "ipython>=9.4.0",
+    "ipywidgets>=8.1.7",
+    "jupyter>=1.1.1",
+    "jupyterlab>=4.4.8",
+    "matplotlib>=3.10.5",
+    "numpy>=1.26,<2.0",
+    "openai>=2.8.0",
+    "pandas>=2.3.2",
+    "python-dotenv>=1.2.2",
+    "scikit-learn>=1.5.2",
+    "transformers>=4.47.0",
+    "langfuse>=4",
 ]
 
 [build-system]
@@ -17,6 +29,13 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
+agentic-xai-eval = [
+    "crewai>=1.6.1",
+    "google-genai>=1.67.0",
+    "openinference-instrumentation-google-genai>=0.1.0",
+    "openinference-instrumentation-openai>=0.1.0",
+    "streamlit>=1.55.0",
+]
 dev = [
     "codecov>=2.1.13",
     "mypy>=1.14.1",
@@ -117,6 +136,9 @@ ignore = [
 "__init__.py" = ["E402", "F401", "F403", "F811"]
 # Ignoring undocumented public functions, public init, magic method, and magic numbers in tests folder
 "tests/*" = ["D103", "D105", "D107"]
+# Notebooks: imports are not at top of file by design (cells), no module docstrings needed
+"notebooks/*" = ["E402", "D100", "D103", "D104"]
+"*.ipynb" = ["E402", "D100", "D103", "D104"]
 
 
 [tool.ruff.lint.pep8-naming]
@@ -135,6 +157,19 @@ max-doc-length = 88
 markers = [
     "integration_test: marks tests as integration tests",
 ]
+
+[[tool.mypy.overrides]]
+module = ["crewai.*", "streamlit", "google.genai", "openinference.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "agentfinvqa.agents.*",
+    "agentfinvqa.eval.dashboard",
+    "agentfinvqa.eval.judge",
+    "agentfinvqa.tools.*",
+]
+ignore_errors = true
 
 [tool.coverage]
     [tool.coverage.run]
