@@ -9,6 +9,10 @@ wheels/
 # Virtual environments
 .venv
 
+# Environment variables
+.env
+.env.*
+
 # Lint & Test
 .mypy_cache/
 .pytest_cache/

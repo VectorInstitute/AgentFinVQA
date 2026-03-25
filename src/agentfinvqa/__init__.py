@@ -1,11 +1,3 @@
-"""Top level module."""
+"""Agentic ChartQAPro Evaluation Harness."""
 
-
-def hello() -> str:
-    """UV's hello world.
-
-    Returns
-    -------
-        str: A friendly hello.
-    """
-    return "Hello from agentfinvqa!"
+__version__ = "0.1.0"
