@@ -58,13 +58,13 @@ jobs:
 
       - name: Install dependencies and check code
         run: |
-          uv run pytest -m "not integration_test" --cov src/aieng_template_uv --cov-report=xml tests
+          uv run pytest -m "not integration_test" --cov src/agentfinvqa --cov-report=xml tests
 
       # Uncomment this once this repo is configured on Codecov
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@1af58845a975a7985b0beb0cbe6fbbb71a41dbad
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: VectorInstitute/aieng-template-uv
+          slug: VectorInstitute/AgentFinVQA
           fail_ci_if_error: false
           verbose: true

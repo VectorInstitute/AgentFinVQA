@@ -1,6 +1,6 @@
 """Test for foo module."""
 
-from aieng_template_uv.foo import foo as foofn
+from agentfinvqa.foo import foo as foofn
 
 
 def test_foofn(my_test_number: int) -> None:

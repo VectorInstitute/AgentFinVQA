@@ -1,11 +1,11 @@
 [project]
-name = "aieng-template-uv"
+name = "agentfinvqa"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 authors = [ {name = "Vector AI Engineering", email = "ai_engineering@vectorinstitute.ai"}]
 license = "Apache-2.0"
-repository = "https://github.com/VectorInstitute/aieng-template-uv"
+repository = "https://github.com/VectorInstitute/AgentFinVQA"
 requires-python = ">=3.12"
 dependencies = [
     "filelock==3.25.2",
@@ -138,5 +138,5 @@ markers = [
 
 [tool.coverage]
     [tool.coverage.run]
-    source=["src/aieng_template_uv"]
+    source=["src/agentfinvqa"]
     omit=["tests/*", "*__init__.py"]
