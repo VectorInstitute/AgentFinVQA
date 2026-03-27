@@ -19,6 +19,7 @@ from openai import OpenAI
 from pydantic import BaseModel, Field, PrivateAttr
 
 from ..langfuse_integration.tracing import close_span, open_llm_span
+from ..utils.model_compat import openai_temperature
 
 
 _OCR_PROMPT = """\
@@ -235,7 +236,7 @@ class OcrReaderTool(BaseTool):
                 }
             ],
             max_completion_tokens=512,
-            temperature=0,
+            **openai_temperature(self.model),
         )
 
         raw_text = response.choices[0].message.content or ""
@@ -271,7 +272,7 @@ class OcrReaderTool(BaseTool):
         response = client.models.generate_content(
             model=self.model,
             contents=[genai.types.Part.from_bytes(data=base64.b64decode(data), mime_type=f"image/{mime}"), _OCR_PROMPT],
-            config=genai.types.GenerateContentConfig(temperature=0, max_output_tokens=512),
+            config=genai.types.GenerateContentConfig(temperature=0, max_output_tokens=768),
         )
 
         raw_text = response.text or ""

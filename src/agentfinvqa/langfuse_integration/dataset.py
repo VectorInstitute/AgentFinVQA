@@ -1,4 +1,4 @@
-"""Register ChartQAPro samples as a Langfuse Dataset.
+"""Register supported dataset samples as a Langfuse Dataset.
 
 Usage:
     python -m agentfinvqa.langfuse_integration.dataset \
@@ -6,14 +6,42 @@ Usage:
 """
 
 import argparse
-from typing import Any, List, Optional
+from collections.abc import Callable
+from typing import List, Optional, Sequence, TypedDict
 
 from ..datasets.chartqapro_loader import load_chartqapro
+from ..datasets.finmme_loader import load_finmme
+from ..datasets.perceived_sample import PerceivedSample
 from .client import get_client
 
 
+DatasetLoader = Callable[..., List[PerceivedSample]]
+
+
+class DatasetLoaderConfig(TypedDict):
+    """Configuration describing how to load and label a dataset for Langfuse."""
+
+    loader: DatasetLoader
+    display_name: str
+    default_image_dir: str
+
+
+DATASET_LOADERS: dict[str, DatasetLoaderConfig] = {
+    "chartqapro": {
+        "loader": load_chartqapro,
+        "display_name": "ChartQAPro",
+        "default_image_dir": "data/chartqapro_images",
+    },
+    "finmme": {
+        "loader": load_finmme,
+        "display_name": "FinMME",
+        "default_image_dir": "data/finmme_images",
+    },
+}
+
+
 def register_dataset(
-    samples: List[Any],
+    samples: Sequence[PerceivedSample],
     dataset_name: str = "ChartQAPro",
     split: str = "test",
 ) -> Optional[str]:
@@ -43,7 +71,7 @@ def register_dataset(
     name = f"{dataset_name}_{split}"
     try:
         client.create_dataset(name=name)
-        [
+        for s in samples:
             client.create_dataset_item(
                 dataset_name=name,
                 input={
@@ -55,8 +83,6 @@ def register_dataset(
                 },
                 expected_output=s.expected_output,
             )
-            for s in samples
-        ]
         print(f"[langfuse] Registered {len(samples)} samples → dataset '{name}'")
         return name
     except Exception as exc:
@@ -66,21 +92,28 @@ def register_dataset(
 
 def main() -> None:
     """
-    Command-line interface for registering ChartQAPro datasets.
+    Command-line interface for registering supported datasets.
 
     Returns
     -------
     None
     """
-    parser = argparse.ArgumentParser(description="Register ChartQAPro samples as Langfuse dataset")
+    parser = argparse.ArgumentParser(description="Register dataset samples as Langfuse dataset")
+    parser.add_argument("--dataset", default="chartqapro", choices=sorted(DATASET_LOADERS.keys()))
     parser.add_argument("--split", default="test")
     parser.add_argument("--n", type=int, default=25)
-    parser.add_argument("--image_dir", default="data/chartqapro_images")
+    parser.add_argument("--image_dir", default=None)
     parser.add_argument("--cache_dir", default=None)
     args = parser.parse_args()
 
-    samples = load_chartqapro(split=args.split, n=args.n, image_dir=args.image_dir, cache_dir=args.cache_dir)
-    register_dataset(samples, split=args.split)
+    dataset_key = args.dataset.lower()
+    cfg = DATASET_LOADERS[dataset_key]
+    loader = cfg["loader"]
+    display_name = cfg["display_name"]
+    image_dir = args.image_dir or cfg["default_image_dir"]
+
+    samples = loader(split=args.split, n=args.n, image_dir=image_dir, cache_dir=args.cache_dir)
+    register_dataset(samples, dataset_name=display_name, split=args.split)
 
 
 if __name__ == "__main__":

@@ -80,6 +80,63 @@ def score_unanswerable(expected: str, predicted: str) -> Optional[float]:
 
 
 # ---------------------------------------------------------------------------
+# Choice mapping helpers (for datasets like FinMME)
+# ---------------------------------------------------------------------------
+
+
+def _normalize_text(text: str) -> str:
+    text = text.lower()
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _parse_choice_labels(answer: str, choice_map: dict[str, str]) -> list[str]:
+    """Extract ordered choice labels (e.g. ['A','C']) from an answer string."""
+    if not answer or not choice_map:
+        return []
+    answer = answer.strip()
+    # Direct match against full choice text
+    normalized_map = {_normalize_text(text): label for label, text in choice_map.items()}
+    normalized_answer = _normalize_text(answer)
+    if normalized_answer in normalized_map:
+        return [normalized_map[normalized_answer]]
+
+    # Letter combo detection (e.g. "ACD")
+    letters_only = re.sub(r"[^A-Za-z]", "", answer).upper()
+    if letters_only and all(ch in choice_map for ch in letters_only):
+        labels: list[str] = []
+        for ch in letters_only:
+            if ch not in labels:
+                labels.append(ch)
+        return labels
+
+    # Direct substring match against choice text
+    labels = []
+    for norm_text, label in normalized_map.items():
+        if norm_text and norm_text in normalized_answer and label not in labels:
+            labels.append(label)
+    if labels:
+        return labels
+
+    # Split via connectors (+, commas, "and", etc.)
+    parts = re.split(r"\s*(?:\+|,|/|;|&|\band\b|\|)\s*", answer, flags=re.IGNORECASE)
+    for part in parts:
+        norm = _normalize_text(part)
+        if not norm:
+            continue
+        maybe_label = normalized_map.get(norm)
+        if maybe_label and maybe_label not in labels:
+            labels.append(maybe_label)
+    return labels
+
+
+def _labels_to_text(labels: list[str], choice_map: dict[str, str]) -> str:
+    if not labels or not choice_map:
+        return ""
+    return " + ".join(choice_map.get(label, label) for label in labels)
+
+
+# ---------------------------------------------------------------------------
 # Per-MEP evaluation
 # ---------------------------------------------------------------------------
 
@@ -110,6 +167,15 @@ def evaluate_mep(
     planner_ms = timestamps.get("planner_ms") or 0
     vision_ms = timestamps.get("vision_ms") or 0
     verifier_ms = timestamps.get("verifier_ms") or 0
+
+    metadata = sample.get("metadata") or {}
+    choice_map = metadata.get("choice_map") or {}
+    expected_labels = _parse_choice_labels(metadata.get("answer_label", ""), choice_map)
+    predicted_labels = _parse_choice_labels(predicted, choice_map)
+    if expected_labels:
+        expected = _labels_to_text(expected_labels, choice_map)
+    if predicted_labels:
+        predicted = _labels_to_text(predicted_labels, choice_map)
 
     metrics: dict = {
         "sample_id": sample.get("sample_id", ""),

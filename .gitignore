@@ -24,3 +24,23 @@ wheels/
 # macos
 *.DS_Store
 site/
+
+# Media files
+*.jpg
+*.jpeg
+*.png
+*.gif
+
+# CSV and JSON files
+*.csv
+*.json
+*.jsonl
+
+# Log files
+*.log
+logs/
+**/logs/
+
+# Bash and SLURM scripts
+*.slrm
+*.backup

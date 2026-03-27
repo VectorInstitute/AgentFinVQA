@@ -119,6 +119,7 @@ class MEPVerifier:
     parsed: Dict[str, Any] = field(default_factory=dict)  # {verdict, answer, reasoning}
     parse_error: bool = False
     verdict: str = "skipped"  # "confirmed" | "revised" | "skipped"
+    tool_trace: List[Dict] = field(default_factory=list)
 
 
 @dataclass

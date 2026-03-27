@@ -86,6 +86,7 @@ def sample_trace(
     question_type: str,
     config_name: str,
     run_id: str,
+    dataset_slug: str = "chartqapro",
     project_name: str = "chartqapro-eval",
 ) -> Generator[Optional["_TraceHandle"], None, None]:
     """
@@ -107,6 +108,8 @@ def sample_trace(
         The evaluation configuration used.
     run_id : str
         The unique ID of the pipeline run.
+    dataset_slug : str, default 'chartqapro'
+        Dataset identifier for trace naming.
     project_name : str, default 'chartqapro-eval'
         Langfuse project identifier (ignored in v4; use SDK config).
 
@@ -122,7 +125,7 @@ def sample_trace(
 
     with (
         client.start_as_current_observation(  # type: ignore[attr-defined]
-            name=f"chartqapro/{sample_id}",
+            name=f"{dataset_slug}/{sample_id}",
             as_type="span",
             input={"question": question, "expected_output": expected_output},
             metadata={

@@ -22,6 +22,7 @@ dependencies = [
     "scikit-learn>=1.5.2",
     "transformers>=4.47.0",
     "langfuse>=4",
+    "google-genai>=1.34.0",
 ]
 
 [build-system]
@@ -159,7 +160,7 @@ markers = [
 ]
 
 [[tool.mypy.overrides]]
-module = ["crewai.*", "streamlit", "google.genai", "openinference.*"]
+module = ["crewai.*", "streamlit", "google.genai", "openinference.*", "datasets"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

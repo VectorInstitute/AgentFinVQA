@@ -14,11 +14,12 @@ from ..datasets.perceived_sample import PerceivedSample
 from ..langfuse_integration.tracing import close_span, open_llm_span
 from ..tools.vision_qa_tool import VisionQATool
 from ..utils.json_strict import parse_strict
+from ..utils.model_compat import openai_temperature
 
 
 VISION_PROMPT_PATH = Path(__file__).parent / "prompts" / "vision.txt"
 
-VISION_REQUIRED_KEYS = ["answer", "explanation"]
+VISION_REQUIRED_KEYS = ["choice_analysis", "answer", "explanation"]
 
 
 def _load_template() -> str:
@@ -31,6 +32,61 @@ def _load_template() -> str:
         The raw text of the vision prompt template.
     """
     return VISION_PROMPT_PATH.read_text()
+
+
+def _format_choice_blocks(sample: PerceivedSample) -> tuple[str, str]:
+    labeled_choices = sample.metadata.get("choices_labeled") or []
+    if labeled_choices:
+        label_lines = ["Choice labels (letter → text):"]
+        for item in labeled_choices:
+            label_lines.append(f"  {item.get('label')}: {item.get('text')}")
+        return "", "\n".join(label_lines)
+    if sample.choices:
+        return f"Choices: {', '.join(sample.choices)}", ""
+    return "", ""
+
+
+def _format_context_block(sample: PerceivedSample) -> str:
+    if not sample.context:
+        return ""
+    lines = ["Conversation context:"]
+    for turn in sample.context:
+        lines.append(f"  {turn.get('role', 'user')}: {turn.get('content', '')}")
+    return "\n".join(lines)
+
+
+def _format_plan_steps(plan: dict) -> str:
+    steps = plan.get("steps") or []
+    return "\n".join(f"{i + 1}. {step}" for i, step in enumerate(steps))
+
+
+def _format_ocr_block(ocr_result: Optional[dict]) -> str:
+    if not ocr_result:
+        return ""
+    lines = ["Pre-extracted text from chart (use as ground truth for visible text):"]
+    chart_type = (ocr_result.get("chart_type") or "").strip()
+    title = (ocr_result.get("title") or "").strip()
+    if chart_type:
+        lines.append(f"  Chart type : {chart_type}")
+    if title:
+        lines.append(f"  Title      : {title}")
+    x_axis = ocr_result.get("x_axis", {})
+    x_label = (x_axis.get("label") or "").strip()
+    x_ticks = x_axis.get("ticks", [])
+    if x_label or x_ticks:
+        lines.append(f"  X-axis     : label={x_label!r}  ticks={x_ticks}")
+    y_axis = ocr_result.get("y_axis", {})
+    y_label = (y_axis.get("label") or "").strip()
+    y_ticks = y_axis.get("ticks", [])
+    if y_label or y_ticks:
+        lines.append(f"  Y-axis     : label={y_label!r}  ticks={y_ticks}")
+    if ocr_result.get("legend"):
+        lines.append(f"  Legend     : {ocr_result['legend']}")
+    if ocr_result.get("data_labels"):
+        lines.append(f"  Data labels: {ocr_result['data_labels']}")
+    if ocr_result.get("annotations"):
+        lines.append(f"  Annotations: {ocr_result['annotations']}")
+    return "\n".join(lines)
 
 
 def build_vision_task_description(sample: PerceivedSample, plan: dict, ocr_result: Optional[dict] = None) -> str:
@@ -55,46 +111,16 @@ def build_vision_task_description(sample: PerceivedSample, plan: dict, ocr_resul
         The rendered prompt ready for the vision-capable agent.
     """
     template = _load_template()
-
-    choices_block = ""
-    if sample.choices:
-        choices_block = f"Choices: {', '.join(sample.choices)}"
-
-    context_block = ""
-    if sample.context:
-        lines = ["Conversation context:"]
-        for turn in sample.context:
-            lines.append(f"  {turn.get('role', 'user')}: {turn.get('content', '')}")
-        context_block = "\n".join(lines)
-
-    steps = plan.get("steps", [])
-    plan_steps_block = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(steps))
-
-    ocr_block = ""
-    if ocr_result:
-        lines = ["Pre-extracted text from chart (use as ground truth for visible text):"]
-        if ocr_result.get("chart_type"):
-            lines.append(f"  Chart type : {ocr_result['chart_type']}")
-        if ocr_result.get("title"):
-            lines.append(f"  Title      : {ocr_result['title']}")
-        x = ocr_result.get("x_axis", {})
-        if x.get("label") or x.get("ticks"):
-            lines.append(f"  X-axis     : label={x.get('label', '')!r}  ticks={x.get('ticks', [])}")
-        y = ocr_result.get("y_axis", {})
-        if y.get("label") or y.get("ticks"):
-            lines.append(f"  Y-axis     : label={y.get('label', '')!r}  ticks={y.get('ticks', [])}")
-        if ocr_result.get("legend"):
-            lines.append(f"  Legend     : {ocr_result['legend']}")
-        if ocr_result.get("data_labels"):
-            lines.append(f"  Data labels: {ocr_result['data_labels']}")
-        if ocr_result.get("annotations"):
-            lines.append(f"  Annotations: {ocr_result['annotations']}")
-        ocr_block = "\n".join(lines)
+    choices_block, choice_labels_block = _format_choice_blocks(sample)
+    context_block = _format_context_block(sample)
+    plan_steps_block = _format_plan_steps(plan)
+    ocr_block = _format_ocr_block(ocr_result)
 
     return template.format(
         image_path=sample.image_path,
         question=sample.question,
         choices_block=choices_block,
+        choice_labels_block=choice_labels_block,
         context_block=context_block,
         ocr_block=ocr_block,
         plan_steps_block=plan_steps_block,
@@ -128,7 +154,7 @@ def _build_llm(backend: str, model: str, api_key: Optional[str]) -> LLM:
         return LLM(
             model=model,
             api_key=api_key or os.environ.get("OPENAI_API_KEY", ""),
-            temperature=0,
+            **openai_temperature(model),
         )
     if backend == "gemini":
         return LLM(
@@ -262,11 +288,11 @@ class VisionAgent:
             role="Chart Reading Vision Agent",
             goal=(
                 "Answer chart questions by calling vision_qa_tool exactly once, "
-                "then output strict JSON with 'answer' and 'explanation'."
+                "then output strict JSON with 'choice_analysis', 'answer', and 'explanation'."
             ),
             backstory=(
                 "You are a precise chart analysis agent. You use vision_qa_tool to "
-                "inspect chart images and produce grounded, evidence-based answers. "
+                "inspect chart images, score each option in 'choice_analysis', and produce grounded answers. "
                 "You follow inspection plans step by step and never hallucinate."
             ),
             llm=llm,
@@ -278,7 +304,7 @@ class VisionAgent:
 
         task = Task(
             description=task_description,
-            expected_output='JSON object: {"answer": "...", "explanation": "..."}',
+            expected_output='JSON object: {"choice_analysis": {...}, "answer": "...", "explanation": "..."}',
             agent=agent,
         )
 

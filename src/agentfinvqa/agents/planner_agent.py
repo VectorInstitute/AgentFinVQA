@@ -13,6 +13,7 @@ from crewai import LLM, Agent, Crew, Task
 from ..datasets.perceived_sample import PerceivedSample
 from ..langfuse_integration.tracing import close_span, open_llm_span
 from ..utils.json_strict import parse_strict
+from ..utils.model_compat import openai_temperature
 
 
 PLANNER_PROMPT_PATH = Path(__file__).parent / "prompts" / "planner.txt"
@@ -95,7 +96,7 @@ def _build_llm(backend: str, model: str, api_key: Optional[str]) -> LLM:
         return LLM(
             model=model,
             api_key=api_key or os.environ.get("OPENAI_API_KEY", ""),
-            temperature=0,
+            **openai_temperature(model),
         )
     if backend == "gemini":
         return LLM(

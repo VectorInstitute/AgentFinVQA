@@ -19,6 +19,7 @@ from openai import OpenAI
 from pydantic import BaseModel, Field, PrivateAttr
 
 from ..langfuse_integration.tracing import close_span, open_llm_span
+from ..utils.model_compat import openai_temperature
 
 
 class VisionQAInput(BaseModel):
@@ -201,6 +202,15 @@ class VisionQATool(BaseTool):
             parts.append(f"  {i}. {step}")
 
         parts.append(
+            "\nExtraction rules:"
+            "\n- Read ALL axis tick marks and note scale/units before extracting any values"
+            "\n- For stacked, grouped, pie, or multi-series charts: match each legend entry to its color/pattern/position FIRST"
+            "\n- Report exact numeric values (single number, not a range) unless the question explicitly asks for a range"
+            "\n- For multi-part questions (e.g. 'for X and Y'), report each part separately — do not aggregate"
+            "\n- Only answer UNANSWERABLE if relevant data is genuinely absent; if values are partially visible, give your best reading"
+        )
+
+        parts.append(
             "\nOutput ONLY this JSON (no markdown, no extra text):\n"
             '{"answer": "...", "explanation": "..."}\n'
             "If the question cannot be answered from the chart: "
@@ -291,7 +301,7 @@ class VisionQATool(BaseTool):
                 }
             ],
             max_completion_tokens=1024,
-            temperature=0,
+            **openai_temperature(self.model),
         )
 
         raw_text = response.choices[0].message.content or ""
@@ -344,7 +354,7 @@ class VisionQATool(BaseTool):
         response = client.models.generate_content(
             model=self.model,
             contents=[genai.types.Part.from_bytes(data=b64, mime_type=f"image/{mime}"), prompt],
-            config=genai.types.GenerateContentConfig(temperature=0, max_output_tokens=1024),
+            config=genai.types.GenerateContentConfig(temperature=0, max_output_tokens=768),
         )
 
         raw_text = response.text or ""

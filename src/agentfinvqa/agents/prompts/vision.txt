@@ -3,6 +3,7 @@ You are a chart reading agent. Analyze the chart image and answer the question b
 Chart Image Path: {image_path}
 Question: {question}
 {choices_block}
+{choice_labels_block}
 {context_block}
 {ocr_block}
 
@@ -16,14 +17,28 @@ Instructions:
    - plan_steps: the numbered inspection steps above
    - choices: the MCQ choices if provided
    - context: the conversation context if provided
-2. After receiving the tool result, output your final answer as STRICT JSON only
+2. Before reading any data values:
+   - Read ALL axis tick marks and note the scale/units (e.g. %, $B, index)
+   - For stacked, grouped, pie, or multi-series charts: explicitly map each legend entry to its color/pattern/position before assigning any values
+3. Capture the evidence for each provided choice (or range) in a JSON object named "choice_analysis". Each entry must include:
+   - "evidence": the exact text, bar, or slice you read from the chart (quote tick marks or labels directly)
+   - "trend_or_value": the precise numeric value or trend observed — use a single number, not a range, unless the question explicitly asks for a range
+   - "confidence": number between 0 and 1; use < 0.5 if label is ambiguous or occluded
+   - Limit each entry to a single short phrase (≤ 15 words).
+   If there are no explicit choices, set "choice_analysis" to an empty object.
+4. For multi-part questions asking about X and Y separately, report values for each independently — do not sum or aggregate unless explicitly asked.
+5. After receiving the tool result, output your final answer as STRICT JSON only
 
 Final output format (JSON only — no markdown, no code fences, no extra text):
-{{"answer": "<your answer>", "explanation": "<your explanation>"}}
+{{"choice_analysis": {{"Choice A": {{...}}, ...}}, "answer": "<your answer>", "explanation": "<your explanation>"}}
 
 Rules:
-- If the question CANNOT be answered from the chart: set answer to exactly "UNANSWERABLE"
-- explanation MUST reference specific chart evidence: axis labels, legend entries, series names, data values, trend direction
+- Only set answer to "UNANSWERABLE" if you have genuinely searched the chart and cannot locate any relevant data — not merely because labels are small or the question requires a simple inference. If values are present but partially obscured, give your best reading and note uncertainty in the explanation.
+- If vision_qa_tool returns an error or cannot be called, output {{"choice_analysis": {{}}, "answer": "UNANSWERABLE", "explanation": "TOOL_ERROR: <brief note>"}} and do not fabricate values from OCR or memory.
+- explanation MUST reference specific chart evidence: axis tick values, legend entry names, series colors, data point positions
+- Final explanation must be ≤2 sentences.
 - explanation MUST NOT invent or assume details not visible in the chart
-- For MCQ: answer must be exactly one of the provided choices
+- For MCQ: the `answer` field must be exactly one of the provided choice texts or the precise letter/letter-combo (e.g., "AC"). Do NOT paraphrase.
+- When multiple choice letters form the correct answer, respond with the exact letter combination (e.g., "AC")
+- NEVER output "Thought:", "Action:", or any text outside the JSON. Violations count as failure to follow instructions.
 - JSON only output — no markdown, no preamble, no trailing text

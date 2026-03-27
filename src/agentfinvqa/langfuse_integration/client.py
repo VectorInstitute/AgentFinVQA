@@ -1,29 +1,49 @@
-"""Langfuse client singleton with graceful degradation.
+"""Langfuse client helper with optional tracing instrumentation."""
 
-Returns None when LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY are not set or
-langfuse is not installed, so every caller can guard with ``if client:``.
-"""
+from __future__ import annotations
 
 import os
 from contextlib import suppress
+from typing import Protocol, cast
 
 from dotenv import load_dotenv
 from langfuse import Langfuse
 
 
+class _Instrumentor(Protocol):
+    """Minimal interface for instrumentation helpers used at runtime."""
+
+    def instrument(self) -> None:
+        """Activate automatic tracing hooks."""
+
+
 try:
-    from openinference.instrumentation.google_genai import GoogleGenAIInstrumentor
-
-    _google_instrumentor = GoogleGenAIInstrumentor()
-except Exception:
-    _google_instrumentor = None
+    from openinference.instrumentation.google_genai import GoogleGenAIInstrumentor as _GoogleInstrumentorImpl
+except Exception:  # pragma: no cover - optional dependency
+    _GoogleInstrumentor: type[_Instrumentor] | None = None
+else:
+    _GoogleInstrumentor = cast(type[_Instrumentor], _GoogleInstrumentorImpl)
 
 try:
-    from openinference.instrumentation.openai import OpenAIInstrumentor
+    from openinference.instrumentation.openai import OpenAIInstrumentor as _OpenAIInstrumentorImpl
+except Exception:  # pragma: no cover - optional dependency
+    _OpenAIInstrumentor: type[_Instrumentor] | None = None
+else:
+    _OpenAIInstrumentor = cast(type[_Instrumentor], _OpenAIInstrumentorImpl)
 
-    _openai_instrumentor = OpenAIInstrumentor()
-except Exception:
-    _openai_instrumentor = None
+
+def _build_instrumentor(cls: type[_Instrumentor] | None) -> _Instrumentor | None:
+    """Instantiate an instrumentation helper, swallowing runtime errors."""
+    if cls is None:
+        return None
+    try:
+        return cls()
+    except Exception:
+        return None
+
+
+_google_instrumentor = _build_instrumentor(_GoogleInstrumentor)
+_openai_instrumentor = _build_instrumentor(_OpenAIInstrumentor)
 
 
 _client = None

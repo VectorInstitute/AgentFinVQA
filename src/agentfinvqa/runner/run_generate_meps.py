@@ -12,11 +12,12 @@ Usage:
 
 import argparse
 import contextlib
+import json
 import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional, TypedDict
 
 from dotenv import load_dotenv
 
@@ -24,6 +25,7 @@ from ..agents.planner_agent import PlannerAgent
 from ..agents.verifier_agent import VerifierAgent
 from ..agents.vision_agent import VisionAgent
 from ..datasets.chartqapro_loader import load_chartqapro
+from ..datasets.finmme_loader import load_finmme
 from ..datasets.perceived_sample import PerceivedSample
 from ..langfuse_integration.client import get_client
 from ..langfuse_integration.dataset import register_dataset
@@ -87,6 +89,30 @@ BACKEND_CONFIGS: dict = {
     },
 }
 
+DatasetLoader = Callable[..., list[PerceivedSample]]
+
+
+class DatasetConfig(TypedDict):
+    """Loader metadata for supported evaluation datasets."""
+
+    loader: DatasetLoader
+    display_name: str
+    default_image_dir: str
+
+
+DATASET_CONFIGS: dict[str, DatasetConfig] = {
+    "chartqapro": {
+        "loader": load_chartqapro,
+        "display_name": "ChartQAPro",
+        "default_image_dir": "data/chartqapro_images",
+    },
+    "finmme": {
+        "loader": load_finmme,
+        "display_name": "FinMME",
+        "default_image_dir": "data/finmme_images",
+    },
+}
+
 # Fallback plan used when the planner fails entirely
 _FALLBACK_PLAN = {
     "steps": [
@@ -102,9 +128,77 @@ _FALLBACK_PLAN = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Per-sample processing
-# ---------------------------------------------------------------------------
+def _run_verifier_stage(
+    verifier_agent: Optional[VerifierAgent],
+    sample: PerceivedSample,
+    plan_parsed: dict,
+    vision_parsed: dict,
+    lf_trace: Any,
+) -> tuple[str, dict, bool, str, float, str, list, list[str]]:
+    """Run the optional verifier agent and normalize its outputs."""
+    if verifier_agent is None:
+        return "", {}, False, "", 0.0, "skipped", [], []
+
+    errors: list[str] = []
+    verifier_prompt = ""
+    verifier_parsed: dict = {}
+    verifier_parse_error = False
+    verifier_raw = ""
+    verifier_traces: list = []
+    verifier_ms = 0.0
+    verifier_verdict = "skipped"
+    valid_verifier_verdicts = {"confirmed", "revised"}
+
+    try:
+        with timed() as vrt:
+            (
+                verifier_prompt,
+                verifier_parsed,
+                verifier_parse_error,
+                verifier_raw,
+                verifier_traces,
+            ) = verifier_agent.run(sample, plan_parsed, vision_parsed, lf_trace=lf_trace)
+        verifier_ms = vrt.elapsed_ms
+        raw_verdict_value = verifier_parsed.get("verdict")
+        raw_verdict = raw_verdict_value if isinstance(raw_verdict_value, str) else None
+        invalid_output = verifier_parse_error or raw_verdict not in valid_verifier_verdicts
+        if invalid_output:
+            if not verifier_parse_error:
+                verifier_parse_error = True
+            errors.append(f"verifier_invalid_output: {raw_verdict or 'missing verdict'}")
+            verifier_verdict = "error"
+            if not verifier_parsed:
+                verifier_parsed = {}
+            verifier_parsed.setdefault("verdict", "error")
+            verifier_parsed.setdefault("answer", vision_parsed.get("answer", ""))
+            verifier_parsed.setdefault(
+                "reasoning",
+                "Verifier output malformed or unavailable; defaulting to error.",
+            )
+        else:
+            assert raw_verdict is not None
+            verifier_verdict = raw_verdict
+    except Exception as exc:  # pragma: no cover - verifier optional
+        errors.append(f"verifier_error: {exc}")
+        verifier_parse_error = True
+        verifier_parsed = {
+            "verdict": "error",
+            "answer": vision_parsed.get("answer", ""),
+            "reasoning": f"Verifier crashed: {exc}",
+        }
+        verifier_verdict = "error"
+        traceback.print_exc()
+
+    return (
+        verifier_prompt,
+        verifier_parsed,
+        verifier_parse_error,
+        verifier_raw,
+        verifier_ms,
+        verifier_verdict,
+        verifier_traces,
+        errors,
+    )
 
 
 def process_sample(  # noqa: PLR0915
@@ -114,6 +208,7 @@ def process_sample(  # noqa: PLR0915
     config: dict,
     run_id: str,
     out_dir: str,
+    dataset_name: str = "ChartQAPro",
     lf_client: Any = None,
     verifier_agent: Optional[VerifierAgent] = None,
     ocr_tool: Optional[OcrReaderTool] = None,
@@ -138,6 +233,8 @@ def process_sample(  # noqa: PLR0915
         Unique identifier for the current evaluation run.
     out_dir : str
         Directory where the resulting MEP JSON should be saved.
+    dataset_name : str, default 'ChartQAPro'
+        Human-readable dataset label for logging and artifacts.
     langfuse_client : object, optional
         The Langfuse client for tracing and observability.
     verifier_agent : VerifierAgent, optional
@@ -151,6 +248,7 @@ def process_sample(  # noqa: PLR0915
         The absolute path to the written MEP file.
     """
     config_name = f"{config['planner_backend']}_{config['vision_backend']}"
+    dataset_slug = dataset_name.lower().replace(" ", "_")
     run_start = iso_now()
     errors: list = []
 
@@ -162,6 +260,7 @@ def process_sample(  # noqa: PLR0915
         question_type=sample.question_type.value,
         config_name=config_name,
         run_id=run_id,
+        dataset_slug=dataset_slug,
     ) as lf_trace:
         lf_trace_id = getattr(lf_trace, "id", None)
 
@@ -237,34 +336,17 @@ def process_sample(  # noqa: PLR0915
             traceback.print_exc()
 
         # ---- Verifier (Pass 2.5) ----
-        verifier_prompt = ""
-        verifier_parsed: dict = {}
-        verifier_parse_error = False
-        verifier_raw = ""
-        verifier_ms = 0.0
-        verifier_verdict = "skipped"
-
-        if verifier_agent is not None:
-            try:
-                with timed() as vrt:
-                    (
-                        verifier_prompt,
-                        verifier_parsed,
-                        verifier_parse_error,
-                        verifier_raw,
-                    ) = verifier_agent.run(sample, plan_parsed, vision_parsed, lf_trace=lf_trace)
-
-                verifier_ms = vrt.elapsed_ms
-                verifier_verdict = verifier_parsed.get("verdict", "confirmed")
-            except Exception as exc:
-                errors.append(f"verifier_error: {exc}")
-                verifier_parsed = {
-                    "verdict": "confirmed",
-                    "answer": vision_parsed.get("answer", ""),
-                    "reasoning": f"Verifier crashed: {exc}",
-                }
-                verifier_verdict = "confirmed"
-                traceback.print_exc()
+        (
+            verifier_prompt,
+            verifier_parsed,
+            verifier_parse_error,
+            verifier_raw,
+            verifier_ms,
+            verifier_verdict,
+            verifier_traces,
+            verifier_errors,
+        ) = _run_verifier_stage(verifier_agent, sample, plan_parsed, vision_parsed, lf_trace)
+        errors.extend(verifier_errors)
 
         run_end = iso_now()
 
@@ -286,7 +368,7 @@ def process_sample(  # noqa: PLR0915
                 vision_model=config["vision_model"],
             ),
             sample=MEPSample(
-                dataset="ChartQAPro",
+                dataset=dataset_name,
                 sample_id=sample.sample_id,
                 question=sample.question,
                 question_type=sample.question_type.value,
@@ -321,6 +403,7 @@ def process_sample(  # noqa: PLR0915
                 parsed=verifier_parsed,
                 parse_error=verifier_parse_error,
                 verdict=verifier_verdict,
+                tool_trace=verifier_traces,
             )
             if verifier_agent is not None
             else None,
@@ -367,11 +450,12 @@ def main() -> None:  # noqa: PLR0912, PLR0915
     -------
     None
     """
-    parser = argparse.ArgumentParser(description="Generate MEPs for ChartQAPro")
+    parser = argparse.ArgumentParser(description="Generate MEPs for supported financial VQA datasets")
     parser.add_argument(
         "--dataset",
         default="chartqapro",
-        help="Dataset name (currently only chartqapro)",
+        choices=sorted(DATASET_CONFIGS.keys()),
+        help="Dataset name",
     )
     parser.add_argument("--split", default="test", help="Dataset split")
     parser.add_argument("--n", type=int, default=10, help="Number of samples to process")
@@ -383,11 +467,7 @@ def main() -> None:  # noqa: PLR0912, PLR0915
     )
     parser.add_argument("--workers", type=int, default=1, help="Parallel workers (1 = sequential)")
     parser.add_argument("--out", default="meps/", help="Output directory for MEPs")
-    parser.add_argument(
-        "--image_dir",
-        default="data/chartqapro_images",
-        help="Directory to save/load chart images",
-    )
+    parser.add_argument("--image_dir", default=None, help="Directory to save/load chart images (defaults per dataset)")
     parser.add_argument("--cache_dir", default=None, help="HuggingFace datasets cache dir")
     parser.add_argument(
         "--planner_model",
@@ -406,6 +486,10 @@ def main() -> None:  # noqa: PLR0912, PLR0915
     )
     parser.add_argument("--no_verifier", action="store_true", help="Skip Pass 2.5 verifier agent")
     parser.add_argument("--no_ocr", action="store_true", help="Skip OCR pre-read step")
+    parser.add_argument("--no_langfuse", action="store_true", help="Disable Langfuse dataset/prompt registration")
+    parser.add_argument(
+        "--resume", action="store_true", help="Skip samples that already have MEP JSONs in the output dir"
+    )
     parser.add_argument(
         "--ocr_model",
         default=None,
@@ -419,31 +503,58 @@ def main() -> None:  # noqa: PLR0912, PLR0915
     if args.vision_model:
         config["vision_model"] = args.vision_model
     run_id = str(uuid.uuid4())
+    dataset_key = args.dataset.lower()
+    ds_cfg = DATASET_CONFIGS[dataset_key]
+    dataset_name: str = ds_cfg["display_name"]
+    dataset_slug = dataset_key
+
+    image_dir = args.image_dir or ds_cfg["default_image_dir"]
+
     out_dir = str(
-        Path(args.out) / f"{config['planner_backend']}_{config['vision_backend']}" / "chartqapro" / args.split
+        Path(args.out) / f"{config['planner_backend']}_{config['vision_backend']}" / dataset_slug / args.split
     )
     Path(out_dir).mkdir(parents=True, exist_ok=True)
 
-    print(f"Loading dataset  : {args.dataset} split={args.split} n={args.n}")
-    samples = load_chartqapro(
+    print(f"Loading dataset  : {dataset_name} ({dataset_slug}) split={args.split} n={args.n}")
+    samples: list[PerceivedSample] = ds_cfg["loader"](
         split=args.split,
         n=args.n,
-        image_dir=args.image_dir,
+        image_dir=image_dir,
         cache_dir=args.cache_dir,
     )
+    if args.resume:
+        existing_ids: set[str] = set()
+        for p in Path(out_dir).glob("*.json"):
+            try:
+                data = json.loads(p.read_text())
+                sid = data.get("sample", {}).get("sample_id") or p.stem
+            except Exception:
+                sid = p.stem
+            existing_ids.add(sid)
+        before = len(samples)
+        samples = [s for s in samples if s.sample_id not in existing_ids]
+        skipped = before - len(samples)
+        print(f"Resume enabled   : skipped {skipped} existing samples")
+        if not samples:
+            print("All requested samples already processed; exiting early.")
+            return
     print(f"Samples loaded   : {len(samples)}")
     print(f"Config           : {args.config}  run_id={run_id}")
     print(f"Output dir       : {out_dir}")
     print(f"Workers          : {args.workers}")
 
     # Langfuse: register dataset + version prompts at run start (no-ops if unavailable)
-    lf_client = get_client()
-    if lf_client:
-        print("Langfuse         : enabled")
-        register_dataset(samples, split=args.split)
-        push_prompts()
+    lf_client = None
+    if args.no_langfuse:
+        print("Langfuse         : disabled (--no_langfuse)")
     else:
-        print("Langfuse         : not configured (set LANGFUSE_PUBLIC_KEY + LANGFUSE_SECRET_KEY to enable)")
+        lf_client = get_client()
+        if lf_client:
+            print("Langfuse         : enabled")
+            register_dataset(samples, dataset_name=dataset_name, split=args.split)
+            push_prompts()
+        else:
+            print("Langfuse         : not configured (set LANGFUSE_PUBLIC_KEY + LANGFUSE_SECRET_KEY to enable)")
 
     # Build agents once — run() creates fresh Crew/Tool per call so this is thread-safe
     print("Initialising agents …")
@@ -482,6 +593,7 @@ def main() -> None:  # noqa: PLR0912, PLR0915
                     config,
                     run_id,
                     out_dir,
+                    dataset_name,
                     lf_client,
                     verifier,
                     ocr,
@@ -500,6 +612,7 @@ def main() -> None:  # noqa: PLR0912, PLR0915
                     config,
                     run_id,
                     out_dir,
+                    dataset_name,
                     lf_client,
                     verifier,
                     ocr,

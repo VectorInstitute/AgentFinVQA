@@ -50,6 +50,9 @@ st.set_page_config(
 # ---------------------------------------------------------------------------
 
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
 @st.cache_data
 def load_metrics(path: str) -> pd.DataFrame:
     """Load a metrics JSONL file and return it as a DataFrame."""
@@ -86,16 +89,75 @@ st.sidebar.title("📊 ChartQAPro Eval")
 st.sidebar.markdown("---")
 st.sidebar.subheader("Data Paths")
 
-mep_dir_input = st.sidebar.text_input(
+
+def _relative(path: Path) -> str:
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def _list_metric_files() -> list[str]:
+    candidates: list[str] = []
+    out_dir = REPO_ROOT / "output"
+    if out_dir.exists():
+        for p in sorted(out_dir.glob("metrics*.jsonl")):
+            candidates.append(_relative(p))
+    return candidates
+
+
+def _list_taxonomy_files() -> list[str]:
+    candidates: list[str] = []
+    out_dir = REPO_ROOT / "output"
+    if out_dir.exists():
+        for p in sorted(out_dir.glob("taxonomy*.jsonl")):
+            candidates.append(_relative(p))
+    return candidates
+
+
+def _list_mep_dirs() -> list[str]:
+    dirs: list[str] = []
+    base = REPO_ROOT / "meps"
+    if not base.exists():
+        return dirs
+    for path in sorted(base.rglob("*")):
+        if path.is_dir() and any(path.glob("*.json")):
+            dirs.append(_relative(path))
+    return dirs
+
+
+def sidebar_path_picker(label: str, default: str, options: list[str], help_text: str) -> str:
+    """Select a file path from the sidebar options or enter a custom value."""
+    if not options:
+        return st.sidebar.text_input(label, value=default, help=help_text)
+    choices = ["<custom>"] + options
+    try:
+        default_idx = choices.index(default) if default in choices else 0
+    except ValueError:
+        default_idx = 0
+    selection = st.sidebar.selectbox(label, options=choices, index=default_idx, help=help_text)
+    if selection == "<custom>":
+        return st.sidebar.text_input(f"{label} (custom)", value=default, help=help_text)
+    return selection
+
+
+mep_dir_input = sidebar_path_picker(
     "MEP directory",
-    value="meps/gemini_gemini/chartqapro/test",
-    help="Directory containing .json MEP files",
+    default="meps/gemini_gemini/chartqapro/test",
+    options=_list_mep_dirs(),
+    help_text="Directory containing .json MEP files",
 )
-metrics_input = st.sidebar.text_input("metrics.jsonl", value="output/metrics.jsonl", help="Output of eval_outputs.py")
-taxonomy_input = st.sidebar.text_input(
+metrics_input = sidebar_path_picker(
+    "metrics.jsonl",
+    default="output/metrics.jsonl",
+    options=_list_metric_files(),
+    help_text="Output of eval_outputs.py",
+)
+taxonomy_input = sidebar_path_picker(
     "taxonomy.jsonl (optional)",
-    value="output/taxonomy.jsonl",
-    help="Output of error_taxonomy.py",
+    default="output/taxonomy.jsonl",
+    options=_list_taxonomy_files(),
+    help_text="Output of error_taxonomy.py",
 )
 
 st.sidebar.markdown("---")
@@ -130,7 +192,12 @@ selected_types = st.sidebar.multiselect(
     help="Filter by question type",
 )
 
-verdict_options = ["confirmed", "revised", "skipped"]
+default_verdicts = {"confirmed", "revised", "skipped"}
+if df_metrics is not None and "verifier_verdict" in df_metrics.columns:
+    data_verdicts = set(df_metrics["verifier_verdict"].dropna().unique().tolist())
+    verdict_options = sorted(default_verdicts.union(data_verdicts))
+else:
+    verdict_options = sorted(default_verdicts)
 selected_verdicts = st.sidebar.multiselect(
     "Verifier verdict",
     options=verdict_options,
@@ -255,12 +322,17 @@ with tab_overview:
         st.subheader("Failure Taxonomy (Pass 4)")
 
         tax = df_tax.copy()
-        if selected_failures:
+        if "failure_type" not in tax.columns:
+            st.warning("Taxonomy file does not include 'failure_type'. Regenerate with eval.error_taxonomy.")
+            tax = None
+        elif selected_failures:
             tax = tax[tax["failure_type"].isin(selected_failures)]
 
         col_c, col_d = st.columns([2, 1])
         with col_c:
-            if HAS_MPL:
+            if tax is None:
+                st.info("No taxonomy data available.")
+            elif HAS_MPL:
                 counts = tax["failure_type"].value_counts()
                 palette = {
                     "correct": "#00b894",
@@ -291,11 +363,12 @@ with tab_overview:
                 st.dataframe(tax["failure_type"].value_counts())
 
         with col_d:
-            st.dataframe(
-                tax["failure_type"].value_counts().rename("count").reset_index(),
-                use_container_width=True,
-                height=300,
-            )
+            if tax is not None:
+                st.dataframe(
+                    tax["failure_type"].value_counts().rename("count").reset_index(),
+                    use_container_width=True,
+                    height=300,
+                )
 
     # ── Judge scores ──────────────────────────────────────────────────────
     judge_cols = [c for c in df.columns if c.startswith("judge_") and df[c].dtype in ["float64", "int64"]]
@@ -382,6 +455,20 @@ with tab_browser:
         st.markdown(
             f"**Type:** `{sample.get('question_type', '—')}` &nbsp;|&nbsp; **Expected:** `{sample.get('expected_output', '—')}`"
         )
+
+        # MCQ choices
+        meta = sample.get("metadata", {})
+        choices_labeled = meta.get("choices_labeled", [])
+        expected_label = meta.get("answer_label", "")
+        if choices_labeled:
+            with st.expander("Choices", expanded=True):
+                for item in choices_labeled:
+                    label = item.get("label", "")
+                    text = item.get("text", "")
+                    if label == expected_label:
+                        st.markdown(f"**{label}. {text}** ✓")
+                    else:
+                        st.markdown(f"{label}. {text}")
 
         # Accuracy badge
         acc = m_row.get("answer_accuracy", None)
