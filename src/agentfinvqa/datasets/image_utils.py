@@ -6,7 +6,6 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 from PIL import Image as PILImage
 
 
@@ -50,6 +49,8 @@ def save_image_data(image: Any, path: Path) -> str:
                 raise ValueError(f"Unknown image dict keys: {list(image.keys())}")
         else:
             # Fallback: try numpy array-like → PIL
+            import numpy as np  # noqa: PLC0415
+
             PILImage.fromarray(np.array(image)).save(str(path))
             result = str(path)
     except Exception as exc:  # pragma: no cover - log + continue

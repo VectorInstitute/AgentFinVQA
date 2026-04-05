@@ -197,7 +197,7 @@ class VisionQATool(BaseTool):
         if choices:
             parts.append(f"Choices: {', '.join(choices)}")
 
-        parts.append("\nInspection plan — follow in order:")
+        parts.append("\nFocus points (use as guidance, apply your own judgment on how to extract):")
         for i, step in enumerate(plan_steps, 1):
             parts.append(f"  {i}. {step}")
 

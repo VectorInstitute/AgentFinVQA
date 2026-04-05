@@ -18,12 +18,16 @@ for arg in "$@"; do
 done
 LOG_FILE="$LOG_DIR/${DATASET}_${timestamp}.log"
 
+if [ -f "$REPO_ROOT/.venv/bin/activate" ]; then
+    source "$REPO_ROOT/.venv/bin/activate"
+fi
+
 export CREWAI_TRACING_ENABLED=false
 export OTEL_SDK_DISABLED=1
 
 {
   echo "[$(date --iso-8601=seconds)] Starting ${DATASET} batch → log $LOG_FILE"
-  python3 "$REPO_ROOT/scripts/run_finmme_batch.py" --env_file "${ENV_FILE:-$ENV_FILE_DEFAULT}" "$@"
+  python3 "$REPO_ROOT/scripts/run_batch.py" --env_file "${ENV_FILE:-$ENV_FILE_DEFAULT}" "$@"
   status=$?
   echo "[$(date --iso-8601=seconds)] Run completed with status $status (log $LOG_FILE)"
   exit $status

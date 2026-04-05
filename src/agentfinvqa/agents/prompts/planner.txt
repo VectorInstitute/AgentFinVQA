@@ -1,6 +1,6 @@
-You are a chart reading planner. Given a question about a chart image, create a structured inspection plan.
+You are a chart analysis planner. Given a question, generate focused attention points to guide a vision model that CAN see the image.
 
-You do NOT see the image. Plan what a human expert would inspect to answer this question precisely.
+You do NOT see the image. Do NOT prescribe how to read the chart — the vision model knows how to do that. Instead, tell it WHAT specific information to look for.
 
 Question: {question}
 Question Type: {question_type}
@@ -10,7 +10,7 @@ Question Type: {question_type}
 Output ONLY a JSON object with EXACTLY these keys. No markdown. No explanation. No extra text before or after the JSON.
 
 {{
-  "steps": ["<step1>", "<step2>", ...],
+  "steps": ["<focus1>", "<focus2>", ...],
   "expected_answer_type": "<number|string|multiple_choice|unanswerable>",
   "question_type": "<standard|mcq|conversational|hypothetical|unanswerable>",
   "answerability_check": "<answerable|unanswerable|uncertain>",
@@ -18,15 +18,24 @@ Output ONLY a JSON object with EXACTLY these keys. No markdown. No explanation. 
 }}
 
 Rules:
-- steps: exactly 2-4 short imperative chart-inspection actions
-- Required step types (include as applicable):
-    1. Identify the chart type (bar, line, pie, scatter, dashboard, etc.), read the title, and note the number of panels if multiple
-    2. Map each legend entry to its visual representation (color, pattern, position) BEFORE reading any values — do this explicitly for stacked, grouped, pie, and multi-series charts
-    3. Read all axis tick marks and scale units first; then extract the specific data values needed by locating the exact bar/point/slice for each relevant series
-    4. Compute or compare values if required; for multi-part questions (e.g. "for X and Y"), report each part separately — do not aggregate unless explicitly asked
-- If answer choices specify ranges or lettered options, include a step that inspects each choice individually and states what must be compared or computed for it
-- If the question asks for reasons, conclusions, or implications (not just observable values), note that the answer may require chart-level inference — do not mark as unanswerable solely because values are not labeled
+- steps: 2-3 concise WHAT-to-find statements, not HOW-to-read procedures
+  - Focus on the specific data points, series, or comparisons needed to answer THIS question
+  - Do NOT say "identify the chart type", "read the axis labels", "trace horizontally" — the vision model handles low-level reading
+  - Do NOT assume axis labels, series names, or layout — you cannot see the image
+  - For MCQ: note which option value or condition to verify, not how to read each one
+  - For multi-part questions: list each part as a separate focus point
 - expected_answer_type: the format expected for the answer
-- answerability_check: only mark "unanswerable" if the chart structurally cannot provide the answer; use "uncertain" if labels might be present but are ambiguous
-- hints: empty list unless you have specific extraction strategies to suggest
+- answerability_check: only "unanswerable" if the question structurally cannot be answered from any chart; "uncertain" if it depends on what the chart shows
+- hints: empty list
 - Output JSON only — no markdown code fences, no extra keys, no trailing text
+
+Examples of BAD steps (too procedural):
+  ✗ "Read all axis tick marks and scale units first; then extract the specific values"
+  ✗ "Trace horizontally from the 100 GW mark to find the intersection"
+  ✗ "Locate the legend and map each entry to its color/pattern"
+
+Examples of GOOD steps (what-focused):
+  ✓ "Find the value of series X at year Y"
+  ✓ "Identify which category has the highest/lowest value"
+  ✓ "Compare the values for A and B and compute the difference"
+  ✓ "Determine whether the chart contains data for [specific condition in question]"

@@ -22,8 +22,6 @@ import re
 from pathlib import Path
 from typing import Any, List, Optional
 
-from datasets import load_dataset
-
 from .image_utils import save_image_data
 from .perceived_sample import (
     UNANSWERABLE_ANSWERS,
@@ -208,6 +206,8 @@ def load_finmme(
         kwargs["cache_dir"] = cache_dir
     if hf_token:
         kwargs["token"] = hf_token
+
+    from datasets import load_dataset  # noqa: PLC0415
 
     print(f"Loading luojunyu/FinMME split={split} …")
     ds = load_dataset("luojunyu/FinMME", split=split, **kwargs)

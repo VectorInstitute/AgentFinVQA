@@ -121,31 +121,99 @@ uv run --env-file .env -m agentfinvqa.runner.run_generate_meps \
 
 To target FinMME, switch `--dataset finmme`. The loader automatically writes FinMME charts to `data/finmme_images/` unless you override `--image_dir`. Note: Hugging Face only exposes a `train` split for `luojunyu/FinMME`. Any request for `test` is remapped to `train` internally, so use slicing (e.g. `--split train[:200]`) to simulate held-out subsets.
 
-### Batch helpers
+### Sample selection (`--split` and `--n`)
 
-For headless or batch jobs, use the helper scripts:
+- **`--split`** — Hugging Face split and optional row slice (e.g. `test`, `test[1000:]`, `train[:500]`). This selects *which rows* of the dataset are loaded.
+- **`--n`** — Maximum number of **perceived samples** to process after that slice. Use **`0` or a negative value for no cap** (process the entire loaded slice). Positive `n` stops early once enough samples are materialized.
 
-- Python entrypoint: `python scripts/run_finmme_batch.py --n 500 --split train[:500] --config gemini_gemini --workers 8`
-- Bash wrapper (convenient for schedulers): `scripts/run_finmme_batch.sh --n 500 --split train[:500]`
-
-Both commands default to loading `.env` from the repo root; override by setting `ENV_FILE=/path/to/.env` before calling the bash script or by passing `--env_file` to the Python script.
-
-### SLURM batch job template
-
-If you need to submit a single FinMME run to SLURM (MEP generation + post-eval in one job), use the monolithic template:
+So “run the whole `test` split” is typically:
 
 ```bash
-sbatch scripts/slurm_run_finmme_batch.slrm
+--split test --n 0
 ```
 
-This script sets a time limit (`--time=0-04:00:00`), runs the existing bash helper, and logs output to `logs/slurm_finmme_<jobid>.out/err`. Edit the SBATCH directives and the `run_finmme_batch.sh` arguments inside the file to match your workload.
+A partial slice with no further cap:
 
-### SLURM two-stage pipeline (recommended for large runs)
+```bash
+--split 'test[1000:]' --n 0
+```
+
+### Batch helpers
+
+The recommended entrypoints for all datasets are `scripts/run_batch.py` and its bash wrapper `scripts/run_batch.sh`. These are dataset-agnostic and run generation + post-evaluation in a single MEP pass (metrics, traces, failure taxonomy, and summary in one go):
+
+```bash
+scripts/run_batch.sh \
+    --dataset chartqapro \
+    --split test \
+    --n 500 \
+    --config gemini_gemini \
+    --workers 8 \
+    --post_eval \
+    --use_judge \
+    --langfuse \
+    --resume \
+    --eval_label chartqapro_test_n500
+```
+
+To skip generation and run post-eval on existing MEPs only:
+
+```bash
+scripts/run_batch.sh \
+    --dataset chartqapro \
+    --split test \
+    --config gemini_gemini \
+    --eval_only \
+    --use_judge \
+    --langfuse \
+    --eval_label chartqapro_test_n500
+```
+
+Both commands default to loading `.env` from the repo root. `--langfuse` pushes all numeric eval scores (accuracy, judge rubric scores) back to the originating Langfuse traces.
+
+**Verifier ablation:** pass `--no_verifier` to skip the VerifierAgent (Pass 2.5); the pipeline keeps the planner/vision draft without a revise step. Supported by `scripts/run_batch.py`, `scripts/run_finmme_batch.py`, and `scripts/submit_pipeline.sh` (see below).
+
+### SLURM — single job (generation + eval)
+
+Submit a complete run (generation and post-eval) as one SLURM job:
+
+```bash
+sbatch scripts/slurm_run_batch.slrm
+```
+
+Environment variables (`DATASET`, `SPLIT`, `N`, `CONFIG`, `WORKERS`, `LANGFUSE`, `RESUME`, `NO_VERIFIER`, and model overrides) are passed through from the environment or from `submit_pipeline.sh` via `--export`. Set `NO_VERIFIER=1` before `sbatch` if you call `slurm_run_batch.slrm` without the submit helper.
+
+### SLURM — eval only
+
+To run post-eval on MEPs that already exist:
+
+```bash
+scripts/submit_eval.sh \
+    --dataset chartqapro \
+    --split test \
+    --use_judge \
+    --langfuse \
+    --out_label chartqapro_test_n500
+```
+
+This submits `slurm_eval_only.slrm` as a single SLURM job. You can chain it after a generation job:
+
+```bash
+scripts/submit_eval.sh \
+    --dataset chartqapro \
+    --split test \
+    --use_judge \
+    --langfuse \
+    --after <JOB_ID>
+```
+
+### SLURM — two-stage pipeline (async judge, recommended for large runs)
 
 For large runs, use the chained pipeline that separates MEP generation from LLM judge evaluation. This uses the [Gemini Batch API](https://ai.google.dev/gemini-api/docs/batch) for judge scoring (50% cost reduction, async):
 
 ```bash
 scripts/submit_pipeline.sh \
+    --dataset finmme \
     --split "train[3000:5000]" \
     --n 2000 \
     --workers 8 \
@@ -158,12 +226,32 @@ scripts/submit_pipeline.sh \
     --judge_model gemini-2.5-flash-lite
 ```
 
+**Defaults (you usually do not need to repeat model flags)** — `submit_pipeline.sh` already defaults to `--config gemini_gemini`, `--workers 8`, and the same planner/vision/OCR/verifier/judge models as above. Override only what you change. Add `--langfuse` and/or `--resume` when you want tracing or skip-existing MEPs. For a **verifier-off ablation**, add `--no_verifier`.
+
+**Full split without counting rows** — use `--n 0` (see the *Sample selection* subsection above):
+
+```bash
+scripts/submit_pipeline.sh \
+    --dataset chartqapro \
+    --split test \
+    --n 0 \
+    --no_verifier \
+    --resume
+```
+
+**Not the same as `run_batch.sh --post_eval`** — Job 1 in this chain runs **MEP generation only** (via `slurm_run_batch.slrm` → `run_batch.sh` **without** `--post_eval`). Job 2 submits prompts to the **Gemini Batch API** for async judge scoring. For **local / threaded** post-eval in one process (metrics, traces, taxonomy, summary written immediately), use `scripts/run_batch.sh` with `--post_eval` (and `--use_judge` if you want the LLM judge path during that step) instead of this two-stage pipeline.
+
 This submits two SLURM jobs chained with `--dependency=afterok`:
 
 | Job | Script | What it does |
 |---|---|---|
-| 1 | `slurm_generate_meps.slrm` | MEP generation only |
+| 1 | `slurm_run_batch.slrm` | MEP generation |
 | 2 | `slurm_submit_judge_batch.slrm` | Uploads all judge prompts to Gemini Batch API and exits immediately |
+
+**Where MEPs and batch metrics go**
+
+- **MEP directory** (generation output): `meps/<CONFIG>/<dataset>/<split>/` when the verifier is on (default). With **`--no_verifier`**, MEPs go under **`meps/<CONFIG>/<dataset>/no_verifier/<split>/`** so verifier-on and verifier-off runs do not overwrite each other. Example: `meps/gemini_gemini/chartqapro/test/` vs `meps/gemini_gemini/chartqapro/no_verifier/test/`.
+- **Batch judge file** (job 2): `output/metrics_<out_label>.jsonl` plus `output/metrics_<out_label>.jsonl.batch_state.json`. If you omit `--out_label`, the script sets `<out_label>` to `{dataset}_{sanitized_split}` and appends `_no_verifier` when `--no_verifier` is set (e.g. `chartqapro_test_no_verifier`), so different runs do not overwrite `metrics_test.jsonl`.
 
 Job 2 only runs if job 1 succeeds. When job 2 completes it prints the commands to check status and retrieve results:
 
@@ -177,57 +265,46 @@ python3 -m agentfinvqa.eval.eval_outputs_batch retrieve \
     --state output/metrics_<label>.jsonl.batch_state.json
 ```
 
+The batch job display name in the Gemini console follows the metrics filename (from `--out_label` or the auto-generated label above).
+
 See `notebooks/run_pipeline.ipynb` for an interactive walkthrough.
+
+### Zero-shot baseline
+
+For a single VLM call per sample (no agents), use `baselines/run_zeroshot.py`. Outputs metrics JSONL in the same schema as the agent pipeline for easy comparison.
+
+- **Structured prompt (default)** — rules plus JSON `answer` / `explanation` format.
+- **Minimal prompt** — bare `Question: … / Answer:` (first line of the model reply is scored); use `--prompt_style minimal`.
+
+On SLURM:
+
+```bash
+baselines/submit_zeroshot.sh --dataset chartqapro --split test --prompt_style minimal
+```
 
 ## Evaluation
 
-Evaluation is a four-step pipeline. MEPs must be generated first (see **Running the Pipeline** above).
+The `run_batch.sh` scripts above handle the full eval pipeline automatically via `--post_eval` or `--eval_only`. All four artifacts are produced in a **single MEP pass**:
 
-### Step 1 — Generate metrics from MEPs
+| Artifact | Path |
+|---|---|
+| Per-sample metrics | `output/metrics_<label>.jsonl` |
+| Trace metrics | `output/trace_metrics_<label>.jsonl` |
+| Failure taxonomy | `output/taxonomy_<label>.jsonl` |
+| Summary CSV | `output/summary_<label>.csv` |
 
-The batch helper (`run_finmme_batch.py`) can do this automatically with `--post_eval`:
+If `--langfuse` is set, all numeric scores are pushed back to the originating Langfuse traces.
 
-```bash
-uv run scripts/run_finmme_batch.sh \
-    --n 500 --split train[:500] \
-    --post_eval --use_judge \
-    --workers 4
-```
-
-`--post_eval` writes `output/metrics_<label>.jsonl` and `output/trace_metrics_<label>.jsonl` at the end of the run.
-
-To evaluate an existing MEP directory independently:
+To evaluate an existing MEP directory with the low-level CLI directly:
 
 ```bash
 uv run -m agentfinvqa.eval.eval_outputs \
-    --mep_dir meps/gemini_gemini/finmme/train[:500] \
+    --mep_dir meps/gemini_gemini/chartqapro/test \
     --out output/metrics.jsonl \
-    --judge_model gemini-2.5-flash-lite   # omit --no_judge to include LLM rubric scores
+    --judge_model gemini-2.5-flash-lite
 ```
 
-### Step 2 — Failure taxonomy (optional)
-
-Classifies each incorrect answer into a failure category (legend confusion, extraction error, etc.):
-
-```bash
-uv run -m agentfinvqa.eval.error_taxonomy \
-    --mep_dir meps/gemini_gemini/finmme/train[:500] \
-    --metrics_file output/metrics.jsonl \
-    --out output/taxonomy.jsonl \
-    --model gemini-2.5-flash-lite
-```
-
-### Step 3 — Summarize accuracy
-
-Aggregates metrics by config and question type:
-
-```bash
-uv run -m agentfinvqa.eval.summarize \
-    --metrics output/metrics.jsonl \
-    --out output/summary.csv
-```
-
-### Step 4 — Explore in the dashboard
+### Explore in the dashboard
 
 ```bash
 uv run streamlit run src/agentfinvqa/eval/dashboard.py

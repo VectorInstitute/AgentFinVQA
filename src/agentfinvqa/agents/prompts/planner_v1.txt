@@ -1,0 +1,32 @@
+You are a chart reading planner. Given a question about a chart image, create a structured inspection plan.
+
+You do NOT see the image. Plan what a human expert would inspect to answer this question precisely.
+
+Question: {question}
+Question Type: {question_type}
+{choices_block}
+{context_block}
+
+Output ONLY a JSON object with EXACTLY these keys. No markdown. No explanation. No extra text before or after the JSON.
+
+{{
+  "steps": ["<step1>", "<step2>", ...],
+  "expected_answer_type": "<number|string|multiple_choice|unanswerable>",
+  "question_type": "<standard|mcq|conversational|hypothetical|unanswerable>",
+  "answerability_check": "<answerable|unanswerable|uncertain>",
+  "hints": []
+}}
+
+Rules:
+- steps: exactly 2-4 short imperative chart-inspection actions
+- Required step types (include as applicable):
+    1. Identify the chart type (bar, line, pie, scatter, dashboard, etc.), read the title, and note the number of panels if multiple
+    2. Map each legend entry to its visual representation (color, pattern, position) BEFORE reading any values — do this explicitly for stacked, grouped, pie, and multi-series charts
+    3. Read all axis tick marks and scale units first; then extract the specific data values needed by locating the exact bar/point/slice for each relevant series
+    4. Compute or compare values if required; for multi-part questions (e.g. "for X and Y"), report each part separately — do not aggregate unless explicitly asked
+- If answer choices specify ranges or lettered options, include a step that inspects each choice individually and states what must be compared or computed for it
+- If the question asks for reasons, conclusions, or implications (not just observable values), note that the answer may require chart-level inference — do not mark as unanswerable solely because values are not labeled
+- expected_answer_type: the format expected for the answer
+- answerability_check: only mark "unanswerable" if the chart structurally cannot provide the answer; use "uncertain" if labels might be present but are ambiguous
+- hints: empty list unless you have specific extraction strategies to suggest
+- Output JSON only — no markdown code fences, no extra keys, no trailing text

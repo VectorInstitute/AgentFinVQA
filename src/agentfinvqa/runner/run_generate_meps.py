@@ -45,7 +45,7 @@ from ..mep.schema import (
     MEPVerifier,
     MEPVision,
 )
-from ..mep.writer import write_mep
+from ..mep.writer import mep_dataset_split_relpath, write_mep
 from ..tools.ocr_reader_tool import OcrReaderTool
 from ..utils.hashing import sha256_file
 from ..utils.json_strict import parse_strict
@@ -458,7 +458,12 @@ def main() -> None:  # noqa: PLR0912, PLR0915
         help="Dataset name",
     )
     parser.add_argument("--split", default="test", help="Dataset split")
-    parser.add_argument("--n", type=int, default=10, help="Number of samples to process")
+    parser.add_argument(
+        "--n",
+        type=int,
+        default=10,
+        help="Max samples to process (0 or negative = entire split after slice)",
+    )
     parser.add_argument(
         "--config",
         default="gemini_gemini",
@@ -486,6 +491,7 @@ def main() -> None:  # noqa: PLR0912, PLR0915
     )
     parser.add_argument("--no_verifier", action="store_true", help="Skip Pass 2.5 verifier agent")
     parser.add_argument("--no_ocr", action="store_true", help="Skip OCR pre-read step")
+    parser.add_argument("--run_tag", default=None, help="Subfolder tag within dataset dir (e.g. planner_v2)")
     parser.add_argument("--no_langfuse", action="store_true", help="Disable Langfuse dataset/prompt registration")
     parser.add_argument(
         "--resume", action="store_true", help="Skip samples that already have MEP JSONs in the output dir"
@@ -511,14 +517,20 @@ def main() -> None:  # noqa: PLR0912, PLR0915
     image_dir = args.image_dir or ds_cfg["default_image_dir"]
 
     out_dir = str(
-        Path(args.out) / f"{config['planner_backend']}_{config['vision_backend']}" / dataset_slug / args.split
+        Path(args.out)
+        / f"{config['planner_backend']}_{config['vision_backend']}"
+        / mep_dataset_split_relpath(
+            dataset_slug, args.split, no_verifier=args.no_verifier, no_ocr=args.no_ocr, run_tag=args.run_tag
+        )
     )
     Path(out_dir).mkdir(parents=True, exist_ok=True)
 
-    print(f"Loading dataset  : {dataset_name} ({dataset_slug}) split={args.split} n={args.n}")
+    n_limit = None if args.n <= 0 else args.n
+    n_disp = "all" if n_limit is None else str(n_limit)
+    print(f"Loading dataset  : {dataset_name} ({dataset_slug}) split={args.split} n={n_disp}")
     samples: list[PerceivedSample] = ds_cfg["loader"](
         split=args.split,
-        n=args.n,
+        n=n_limit,
         image_dir=image_dir,
         cache_dir=args.cache_dir,
     )

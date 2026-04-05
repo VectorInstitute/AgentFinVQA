@@ -28,17 +28,17 @@ from agentfinvqa.eval.error_taxonomy import classify_failure
 from agentfinvqa.eval.eval_outputs import evaluate_mep
 from agentfinvqa.eval.eval_traces import evaluate_trace
 from agentfinvqa.eval.summarize import summarize, write_csv
-from agentfinvqa.mep.writer import iter_meps
+from agentfinvqa.mep.writer import iter_meps, mep_dataset_split_relpath
 from agentfinvqa.runner import run_generate_meps
 
 CONFIG_CHOICES = list(run_generate_meps.BACKEND_CONFIGS.keys())
-DATASET_SLUG = "finmme"
+DATASET_CHOICES = list(run_generate_meps.DATASET_CONFIGS.keys())
 
 
 def _build_runner_args(args: argparse.Namespace) -> list[str]:
     cmd: list[str] = [
         "--dataset",
-        DATASET_SLUG,
+        args.dataset,
         "--split",
         args.split,
         "--n",
@@ -180,12 +180,18 @@ def run_post_evaluation(
 
 def main() -> None:
     """Run FinMME generation and optional post-evaluation in one command."""
-    parser = argparse.ArgumentParser(description="Run AgentFinVQA on FinMME at scale")
-    parser.add_argument("--n", type=int, default=100, help="Number of FinMME samples to process")
+    parser = argparse.ArgumentParser(description="Run AgentFinVQA on a dataset at scale")
+    parser.add_argument("--dataset", default="finmme", choices=DATASET_CHOICES, help="Dataset to run")
+    parser.add_argument(
+        "--n",
+        type=int,
+        default=100,
+        help="Max samples (0 or negative = entire split after --split slice)",
+    )
     parser.add_argument(
         "--split",
         default="train",
-        help="FinMME split slice (default train; aliases like test[:50] are remapped to train).",
+        help="Dataset split slice (default train).",
     )
     parser.add_argument("--config", default="gemini_gemini", choices=CONFIG_CHOICES, help="Backend pairing")
     parser.add_argument("--workers", type=int, default=4, help="Threaded workers for generation")
@@ -216,8 +222,12 @@ def main() -> None:
 
     if args.post_eval:
         config = run_generate_meps.BACKEND_CONFIGS[args.config]
-        out_dir = Path(args.out) / f"{config['planner_backend']}_{config['vision_backend']}" / DATASET_SLUG / args.split
-        label = args.eval_label or f"{args.config}_n{args.n}"
+        out_dir = (
+            Path(args.out)
+            / f"{config['planner_backend']}_{config['vision_backend']}"
+            / mep_dataset_split_relpath(args.dataset, args.split, no_verifier=args.no_verifier)
+        )
+        label = args.eval_label or (f"{args.config}_all" if args.n <= 0 else f"{args.config}_n{args.n}")
         run_post_evaluation(
             out_dir=out_dir,
             label=label,

@@ -77,7 +77,8 @@ def cmd_submit(args: argparse.Namespace) -> None:
     meps = list(iter_meps(args.mep_dir))
     print(f"Loaded {len(meps)} MEPs")
 
-    job_name = submit_batch_job(meps, model=args.judge_model)
+    display_name = os.path.splitext(os.path.basename(args.out))[0]
+    job_name = submit_batch_job(meps, model=args.judge_model, display_name=display_name)
 
     state_file = _state_path(args.out)
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
