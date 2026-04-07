@@ -123,6 +123,21 @@ class MEPVerifier:
 
 
 @dataclass
+class MEPLegendGrounding:
+    """Trace of the legend grounding stage inserted between OCR and vision.
+
+    Captures whether the stage was triggered, the structured color-to-series
+    map it produced, any parse errors, and whether the compliance retry fired.
+    """
+
+    triggered: bool = False
+    legend_map: List[Dict] = field(default_factory=list)
+    parse_error: bool = False
+    compliance_retry_triggered: bool = False
+    tool_trace: List[Dict] = field(default_factory=list)
+
+
+@dataclass
 class MEPTimestamps:
     """Timestamps for the different steps of the agent run.
 
@@ -154,6 +169,7 @@ class MEP:
     sample: Optional[MEPSample] = None
     plan: Optional[MEPPlan] = None
     ocr: Optional[MEPOcr] = None  # None when OCR step is skipped
+    legend_grounding: Optional[MEPLegendGrounding] = None  # None when not triggered
     vision: Optional[MEPVision] = None
     verifier: Optional[MEPVerifier] = None  # Pass 2.5 — None when skipped
     timestamps: Optional[MEPTimestamps] = None

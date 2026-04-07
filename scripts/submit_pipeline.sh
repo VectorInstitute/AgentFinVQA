@@ -18,6 +18,7 @@
 #   --langfuse             Enable Langfuse tracing
 #   --resume               Resume from existing MEPs
 #   --no_verifier          Skip Pass 2.5 verifier (ablation: planner/vision answer kept)
+#   --no_legend_grounding  Skip legend grounding stage (ablation)
 #   --out_label LABEL      Batch metrics basename (default: {dataset}_{split}[_no_verifier], split chars sanitized)
 #   --config CONFIG        Backend config preset (default: gemini_gemini)
 #   --job_name NAME        SLURM job name (default: agentfinvqa_batch)
@@ -49,6 +50,7 @@ LANGFUSE=0
 RESUME=0
 NO_VERIFIER=0
 NO_OCR=0
+NO_LEGEND_GROUNDING=0
 RUN_TAG=""
 OUT_LABEL=""
 AFTER_JOB=""
@@ -69,8 +71,9 @@ while [[ $# -gt 0 ]]; do
         --langfuse)      LANGFUSE=1;          shift ;;
         --resume)        RESUME=1;            shift ;;
         --no_verifier)   NO_VERIFIER=1;       shift ;;
-        --no_ocr)        NO_OCR=1;           shift ;;
-        --run_tag)       RUN_TAG="$2";       shift 2 ;;
+        --no_ocr)              NO_OCR=1;              shift ;;
+        --no_legend_grounding) NO_LEGEND_GROUNDING=1; shift ;;
+        --run_tag)             RUN_TAG="$2";          shift 2 ;;
         --out_label)     OUT_LABEL="$2";      shift 2 ;;
         --after)         AFTER_JOB="$2";      shift 2 ;;
         --job_name)      JOB_NAME="$2";       shift 2 ;;
@@ -94,7 +97,7 @@ fi
 
 # Export vars so sbatch inherits them (avoids --export string parsing issues
 # with special characters like brackets in split names e.g. train[0:1])
-export DATASET SPLIT N WORKERS PLANNER_MODEL VISION_MODEL OCR_MODEL VERIFIER_MODEL LANGFUSE RESUME NO_VERIFIER NO_OCR RUN_TAG
+export DATASET SPLIT N WORKERS PLANNER_MODEL VISION_MODEL OCR_MODEL VERIFIER_MODEL LANGFUSE RESUME NO_VERIFIER NO_OCR NO_LEGEND_GROUNDING RUN_TAG
 export JUDGE_MODEL CONFIG OUT_LABEL JOB_NAME
 
 echo "=== Submitting ${DATASET} pipeline ==="
@@ -112,6 +115,7 @@ echo "  Config         : $CONFIG"
 echo "  Resume         : $RESUME"
 echo "  No verifier    : $NO_VERIFIER"
 echo "  No OCR         : $NO_OCR"
+echo "  No legend grnd : $NO_LEGEND_GROUNDING"
 echo "  Run tag        : ${RUN_TAG:-none}"
 echo "  MEP directory  : $MEP_DIR_PREVIEW"
 echo "  Batch metrics  : output/metrics_${OUT_LABEL}.jsonl"

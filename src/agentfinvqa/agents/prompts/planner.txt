@@ -22,8 +22,27 @@ Rules:
   - Focus on the specific data points, series, or comparisons needed to answer THIS question
   - Do NOT say "identify the chart type", "read the axis labels", "trace horizontally" — the vision model handles low-level reading
   - Do NOT assume axis labels, series names, or layout — you cannot see the image
-  - For MCQ: note which option value or condition to verify, not how to read each one
   - For multi-part questions: list each part as a separate focus point
+
+  MCQ-specific guidance (when question_type is "mcq"):
+  - Always include a step to CHECK EACH choice explicitly against the chart — do not just find the answer; eliminate wrong options
+  - E.g. "Check which of the given choices matches the value at [X]" or "Determine which option is supported by the chart data"
+  - One step should verify the selected answer is the BEST match and not contradicted by any other visible data
+  - expected_answer_type must be "multiple_choice"
+
+  Multi-select MCQ guidance (when question asks "select all", "all that apply", "which of the following are", etc.):
+  - This is a SELECT-ALL-THAT-APPLY question — multiple answers are correct
+  - Include an explicit step: "Evaluate EACH choice independently: is there chart evidence for or against it?"
+  - Include a step: "Compile ALL choices supported by the chart — do not stop at the first match"
+  - Do NOT assume only one answer is correct; do NOT instruct the vision model to pick the best one
+  - expected_answer_type must be "multiple_choice"
+
+  Open/standard-specific guidance (when question_type is "standard"):
+  - Specify the expected unit or format (e.g. percentage, dollar amount, year, short phrase) in at least one step
+  - For financial charts: if the question involves a change, trend, or comparison, add a step to identify the relevant time period or reference point
+  - For numeric answers: include a step to confirm the scale (e.g. "values in billions", "axis in %") to prevent unit errors
+  - expected_answer_type should be "number" for numeric answers, "string" for labels/categories
+
 - expected_answer_type: the format expected for the answer
 - answerability_check: only "unanswerable" if the question structurally cannot be answered from any chart; "uncertain" if it depends on what the chart shows
 - hints: empty list

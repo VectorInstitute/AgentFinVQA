@@ -7,16 +7,19 @@ from agentfinvqa.datasets.perceived_sample import QuestionType
 
 
 def test_parse_options_from_json():
+    """Parse a JSON-like options string and drop empty entries."""
     text = '["Option A", "Option B", ""]'
     assert finmme_loader._parse_options(text) == ["Option A", "Option B"]
 
 
 def test_parse_options_from_labeled_text():
+    """Extract option text from labeled (A./B./C.) lines."""
     text = "A. Growth\nB. Value\nC. Income"
     assert finmme_loader._parse_options(text) == ["Growth", "Value", "Income"]
 
 
 def test_map_question_type_variants():
+    """Map FinMME question-type strings to ``QuestionType``."""
     assert finmme_loader._map_question_type("Multiple Choice") == QuestionType.MCQ
     assert finmme_loader._map_question_type("Conversational Q&A") == QuestionType.CONVERSATIONAL
     assert finmme_loader._map_question_type("Unanswerable") == QuestionType.UNANSWERABLE
@@ -24,6 +27,7 @@ def test_map_question_type_variants():
 
 
 def test_build_sample_writes_image(tmp_path):
+    """``_build_sample`` writes the image, parses choices, and sets metadata."""
     row = {
         "id": 7,
         "image": Image.new("RGB", (2, 2), color="white"),
@@ -49,6 +53,7 @@ def test_build_sample_writes_image(tmp_path):
 
 
 def test_build_sample_handles_multi_letter_answer(tmp_path):
+    """Expand multi-letter answers to combined expected text and ``answer_label``."""
     row = {
         "id": 8,
         "image": Image.new("RGB", (2, 2), color="white"),

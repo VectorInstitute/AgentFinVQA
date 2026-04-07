@@ -170,6 +170,52 @@ def _call_gemini(model: str, prompt: str, image_path: str) -> tuple[str, float]:
 # ---------------------------------------------------------------------------
 
 
+def _strip_code_fences(raw: str) -> str:
+    """Remove common markdown code-fence wrappers from model output."""
+    text = raw.strip()
+    text = re.sub(r"^\s*```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*```\s*$", "", text)
+    return text.strip()
+
+
+def _extract_structured_answer(raw_text: str) -> tuple[str, bool]:
+    """Best-effort extraction for structured JSON answers."""
+    cleaned = _strip_code_fences(raw_text)
+    if not cleaned:
+        return "", False
+
+    # Happy path: full JSON object
+    with contextlib.suppress(Exception):
+        parsed = json.loads(cleaned)
+        if isinstance(parsed, dict):
+            ans = str(parsed.get("answer", "")).strip()
+            return ans, bool(ans)
+
+    # Common truncated JSON suffixes
+    for suffix in ['"}', '"}}', '"}}}', '"\n}', '"\n}}']:
+        with contextlib.suppress(Exception):
+            parsed = json.loads(cleaned + suffix)
+            if isinstance(parsed, dict):
+                ans = str(parsed.get("answer", "")).strip()
+                if ans:
+                    return ans, True
+
+    # Extract answer field directly even when explanation is truncated
+    m = re.search(r'"answer"\s*:\s*"((?:\\.|[^"\\])*)"', cleaned, flags=re.DOTALL)
+    if m:
+        with contextlib.suppress(Exception):
+            ans = json.loads(f'"{m.group(1)}"').strip()
+            return ans, bool(ans)
+
+    # Last-resort fallback for non-JSON responses
+    m = re.search(r"(?im)^\s*answer\s*[:\-]\s*(.+?)\s*$", cleaned)
+    if m:
+        ans = m.group(1).strip().strip('"').strip()
+        return ans, bool(ans)
+
+    return "", False
+
+
 def _run_sample(
     sample: PerceivedSample,
     backend: str,
@@ -199,11 +245,7 @@ def _run_sample(
         predicted = raw_text.strip().splitlines()[0].strip()
         parse_ok = bool(predicted)
     else:
-        with contextlib.suppress(Exception):
-            cleaned = raw_text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-            parsed = json.loads(cleaned)
-            predicted = parsed.get("answer", "")
-            parse_ok = True
+        predicted, parse_ok = _extract_structured_answer(raw_text)
 
     # Score — mirror evaluate_mep MCQ label-to-text expansion
     expected = sample.expected_output

@@ -22,13 +22,13 @@ from ..langfuse_integration.tracing import close_span, open_llm_span
 from ..utils.model_compat import openai_temperature
 
 
-_VERIFIER_PROMPT = """\
+_VERIFIER_PROMPT_SINGLE = """\
 You are a critical chart QA verifier. A vision agent has already attempted to answer
 the question below. Your job: look at the chart image carefully and audit the work.
 
 Question         : {question}
 Question Type    : {question_type}
-
+{choices_block}{caption_block}
 Inspection plan the agent was supposed to follow:
 {plan_steps}
 
@@ -42,16 +42,59 @@ Examine the chart image. Then decide:
 Rules:
 - Only REVISE when you are confident you can point to a concrete error in the chart
 - If uncertain, CONFIRM — do not second-guess without visual evidence
-- For MCQ questions: the answer must be one of the stated choices
+- For MCQ questions: the answer must be one of the stated choices above
 - For MCQ questions: return exactly one of the provided choice texts or the precise letter/letter-combo (e.g., "AC")
-- If the answer is truly unanswerable from the chart, say exactly "UNANSWERABLE"
+- UNANSWERABLE override: if the draft answer is "UNANSWERABLE" and MCQ choices are listed above,
+  you MUST systematically check EACH choice against the chart before confirming:
+    1. For each choice: is there visual evidence (bar height, line position, label, tick mark) that
+       supports OR rules it out?
+    2. If ANY choice can be supported or ruled out, REVISE to the best-supported choice.
+    3. Only confirm UNANSWERABLE when ALL choices are genuinely undeterminable from the chart.
 - Keep answers concise — numbers, short phrases, or single words where appropriate
-- Always cite at least one numeric value or labeled element from the chart in your reasoning; if you cannot cite evidence, REVISE
+- Always cite at least one numeric value or labeled element from the chart in your reasoning
 - For MCQ questions, compare the draft answer against at least one alternative choice before confirming
 - Limit the final answer to a short phrase (≤10 words) and keep the reasoning ≤2 sentences.
+- Add a `confidence` field (0.0–1.0): your confidence that your verdict and answer are correct based on what you can see in the chart.
+  Use ≥0.8 only when you can cite specific visual evidence (tick value, bar height, label). Use <0.6 when the chart is ambiguous or partially occluded.
 
 Output ONLY JSON, no markdown, no extra text:
-{{"verdict": "confirmed" | "revised", "answer": "<final answer>", "reasoning": "<one sentence grounded in what you see in the chart>"}}"""
+{{"verdict": "confirmed" | "revised", "answer": "<final answer>", "reasoning": "<one sentence grounded in what you see in the chart>", "confidence": 0.0}}"""
+
+_VERIFIER_PROMPT_MULTI = """\
+You are a critical chart QA verifier. This is a MULTI-SELECT question — multiple choices may be correct.
+
+Question         : {question}
+Question Type    : {question_type}
+{choices_block}{caption_block}
+Inspection plan the agent was supposed to follow:
+{plan_steps}
+
+Vision Agent's Draft Answer     : {draft_answer}
+Vision Agent's Draft Explanation: {draft_explanation}
+
+YOUR TASK — evaluate the draft answer for a multi-select question:
+  CONFIRM — all selected letters are correct AND no correct letters are missing
+  REVISE  — some letters are wrong, or correct letters were omitted
+
+Step-by-step verification (do this for EVERY choice listed above):
+  1. For each letter in the draft answer: is there clear visual evidence it is correct?
+     If NOT supported → it must be removed.
+  2. For each letter NOT in the draft answer: is there clear visual evidence it should be included?
+     If YES → it must be added.
+  3. Your final answer = all and only the letters with chart evidence.
+
+Rules:
+- NEVER collapse a multi-select answer to a single letter unless truly only one is correct
+- NEVER add letters you cannot visually confirm
+- If the draft already selected the right set, CONFIRM — do not change it
+- Return letters concatenated with no separator (e.g. "ABC")
+- Reasoning must cite specific chart evidence (values, labels, bar heights) for each included/excluded choice
+- Keep reasoning ≤3 sentences.
+- Add a `confidence` field (0.0–1.0): your confidence that your final letter set is correct.
+  Use ≥0.8 only when you have clear visual evidence for each included/excluded choice. Use <0.6 when the chart is ambiguous.
+
+Output ONLY JSON, no markdown, no extra text:
+{{"verdict": "confirmed" | "revised", "answer": "<all correct letters concatenated, e.g. ABC>", "reasoning": "<evidence-grounded sentence(s)>", "confidence": 0.0}}"""
 
 
 class VerifierInput(BaseModel):
@@ -63,6 +106,9 @@ class VerifierInput(BaseModel):
     plan_steps: List[str] = Field(description="Ordered inspection steps from the planner")
     draft_answer: str = Field(description="The draft answer produced by the vision agent")
     draft_explanation: str = Field(description="The draft explanation produced by the vision agent")
+    choices: Optional[List[str]] = Field(default=None, description="MCQ answer choices if applicable")
+    caption: Optional[str] = Field(default=None, description="Analyst-written chart caption for context")
+    multi_select: bool = Field(default=False, description="True when multiple choices can be correct simultaneously")
 
 
 class VerifierTool(BaseTool):
@@ -97,6 +143,9 @@ class VerifierTool(BaseTool):
         plan_steps: List[str],
         draft_answer: str,
         draft_explanation: str,
+        choices: Optional[List[str]] = None,
+        caption: Optional[str] = None,
+        multi_select: bool = False,
     ) -> str:
         start_ts = datetime.now(timezone.utc).isoformat()
         t0 = time.time()
@@ -114,9 +163,19 @@ class VerifierTool(BaseTool):
         )
 
         steps_text = "\n".join(f"  {i + 1}. {s}" for i, s in enumerate(plan_steps)) or "  (none)"
-        prompt = _VERIFIER_PROMPT.format(
+        choices_block = "MCQ Choices:\n" + "\n".join(f"  - {c}" for c in choices) + "\n" if choices else ""
+        if caption and caption.strip():
+            caption_block = (
+                f"Chart context (analyst caption — use as background, not as the answer):\n  {caption.strip()}\n"
+            )
+        else:
+            caption_block = ""
+        template = _VERIFIER_PROMPT_MULTI if multi_select else _VERIFIER_PROMPT_SINGLE
+        prompt = template.format(
             question=question,
             question_type=question_type,
+            choices_block=choices_block,
+            caption_block=caption_block,
             plan_steps=steps_text,
             draft_answer=draft_answer,
             draft_explanation=draft_explanation,
@@ -196,7 +255,7 @@ class VerifierTool(BaseTool):
                     ],
                 }
             ],
-            max_completion_tokens=256,
+            max_completion_tokens=2048,
             **openai_temperature(self.model),
         )
         raw_text = response.choices[0].message.content or ""
@@ -213,7 +272,11 @@ class VerifierTool(BaseTool):
         response = client.models.generate_content(
             model=self.model,
             contents=[genai.types.Part.from_bytes(data=base64.b64decode(b64), mime_type=f"image/{mime}"), prompt],
-            config=genai.types.GenerateContentConfig(temperature=0, max_output_tokens=768),
+            config=genai.types.GenerateContentConfig(
+                temperature=0,
+                max_output_tokens=2048,
+                thinking_config=genai.types.ThinkingConfig(thinking_budget=512),
+            ),
         )
         raw_text = response.text or ""
         finish = str(response.candidates[0].finish_reason) if response.candidates else "unknown"

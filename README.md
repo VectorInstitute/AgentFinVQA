@@ -39,28 +39,72 @@ Input Sample (question, chart image, expected answer)
            ▼
     PlannerAgent (text-only LLM)
     • Produces a structured JSON inspection plan
+    • MCQ-aware: checks/eliminates each choice; multi-select guidance
     • Does NOT see the image
            │ plan.steps
            ▼
-    OcrReaderTool (optional)
+    OcrReaderTool
     • Single VLM call focused on text transcription
-    • Produces structured JSON of all visible text
-           │ ocr_text
+    • Produces structured chart metadata (axes, legend, data labels)
+           │ ocr_text + chart_type
            ▼
-    VisionAgent (CrewAI + tools)
-    • Executes the plan step-by-step
-    • Produces answer + explanation
+    LegendGrounderTool (conditional)
+    • Triggered for line/bar/scatter/area/pie/donut charts
+    • Maps legend labels → color descriptions + RGB + line style
+    • Compliance check: re-runs if legend entries are missing
+           │ legend_map
+           ▼
+    VisionAgent (CrewAI + VisionQATool)
+    • Executes the plan using OCR text and legend map as ground truth
+    • Single-select MCQ / multi-select MCQ / open-ended answer paths
+    • Produces answer + explanation + per-choice confidence analysis
            │ draft_answer
            ▼
-    VerifierAgent (single VLM call)
+    Forced-Choice Retry (conditional)
+    • If vision returns UNANSWERABLE and MCQ choices exist:
+      re-runs vision with explicit "FORCED CHOICE" instruction
+           │ draft_answer (revised if retry triggered)
+           ▼
+    VerifierAgent (CrewAI + VerifierTool)
     • Reviews draft answer against chart image
-    • Verdict: CONFIRM or REVISE
+    • Adds reluctance hint when vision confidence is high (≥ 0.85)
+    • Verdict: CONFIRM or REVISE + self-reported confidence
+    • Confidence gate: downgrades low-confidence revisions (< 0.75)
            │
            ▼
     MEP (Model Evaluation Packet)
     • JSON artifact stored to disk
     • Optionally traced in Langfuse
 ```
+
+## Results
+
+### FinMME (250-sample train slice, judge-based accuracy)
+
+| Run | Accuracy | Δ vs baseline | Key change |
+|-----|----------|---------------|------------|
+| `no_legend_grounding` | 48.0% | — | Baseline |
+| `fixes_v1` | 50.4% | +2.4 pp | Legend grounding, caption injection, token limits |
+| `fixes_v2` | 51.6% | +3.6 pp | Disable thinking tokens, MCQ choices to verifier |
+| `fixes_v3` | 51.6% | +3.6 pp | Thinking budget = 512 |
+| `fixes_v4_g3flash` | 56.0% | +8.0 pp | Gemini 3 Flash, forced-choice retry, MCQ-aware planner |
+| `fixes_v5_multiselect` | **69.4%** | +21.4 pp | Full multi-select MCQ support |
+| `fixes_v7_g3flash_conf_gate` | **69.6%** | +21.6 pp | Confidence gate fix, fresh g3flash run |
+
+**vs. FinMME paper (Table 3, Gemini Flash 2.0 = 51.85%):** our best run achieves **+17.8 pp**.
+
+**Fair same-model baseline (250 FinMME IDs):**
+
+- Zero-shot `gemini-3-flash-preview` (structured): **52.8%** exact
+- Agent `fixes_v7_g3flash_conf_gate`: **62.8%** exact
+- Margin: **+10.0 pp**
+
+> Note: the initial zero-shot Gemini-3 file had parser-related empty predictions; after robust answer extraction repair, 141 rows were recovered and re-scored.
+
+Detailed per-run analysis, per-type breakdowns, and paper comparison are in [`notebooks/results_analysis.ipynb`](notebooks/results_analysis.ipynb).
+For camera-ready citation numbers, see [`markdown/camera_ready_metrics.md`](markdown/camera_ready_metrics.md).
+
+---
 
 ## Installation
 
@@ -360,6 +404,53 @@ uv run pre-commit run --all-files
 
 ### Running tests
 
+Run the full test suite:
+
 ```bash
 uv run pytest
 ```
+
+Run a specific test file:
+
+```bash
+uv run pytest tests/agentfinvqa/test_legend_grounding.py
+uv run pytest tests/agentfinvqa/test_finmme_loader.py
+```
+
+Run a specific test class or test:
+
+```bash
+uv run pytest tests/agentfinvqa/test_legend_grounding.py::TestComplianceCheck
+uv run pytest tests/agentfinvqa/test_legend_grounding.py::TestLegendGrounderTool::test_api_error_returns_fallback_json
+```
+
+Run with coverage:
+
+```bash
+uv run pytest --cov=src/agentfinvqa --cov-report=term-missing
+```
+
+Run only integration tests (marked with `@pytest.mark.integration_test`):
+
+```bash
+uv run pytest -m integration_test
+```
+
+### Test coverage
+
+| Test file | What it covers |
+|---|---|
+| `test_finmme_loader.py` | FinMME dataset loader — option parsing, question type mapping, sample construction, multi-letter answers |
+| `test_legend_grounding.py` | Legend grounding pipeline stage — formatting, prompt injection, MEP schema, gate logic, compliance check, `LegendGrounderTool` with mocked API calls |
+| `test_placeholder.py` | Placeholder (no-op) to keep pytest from exiting with "no tests collected" |
+
+#### Legend grounding tests in detail
+
+`test_legend_grounding.py` covers the full legend grounding feature added between the OCR and vision stages:
+
+- **`TestFormatLegendGroundingBlock`** — prompt block formatting: empty/None inputs, header, per-entry label/color/style/confidence rendering, missing-field robustness
+- **`TestBuildVisionTaskDescription`** — `legend_map` injected into vision prompt, absent when empty/None, `prepend_instruction` appears first, OCR block coexists with legend block
+- **`TestMEPLegendGrounding`** — schema defaults, all fields settable, `MEP.to_dict()` serialisation, `None` case
+- **`TestLegendGroundingGate`** — all 7 gated chart types (`line`, `bar`, `scatter`, `area`, `bar_grouped`, `bar_stacked`, `combination`) pass; `pie`, `table`, `dashboard` and others are blocked; single-legend and `grounder=None` are skipped
+- **`TestComplianceCheck`** — label present/absent in explanation, any-label match, case-insensitive, empty explanation/map, entries without `label` key
+- **`TestLegendGrounderTool`** — `pop_traces` flush-and-clear, unknown backend returns error JSON, Gemini success path with trace appended, API crash fallback, prompt template structure

@@ -30,8 +30,6 @@ repos:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
         types_or: [python, jupyter]
-      - id: ruff-format
-        types_or: [python, jupyter]
 
   - repo: local
     hooks:
@@ -60,10 +58,19 @@ repos:
     hooks:
       - id: pytest
         name: pytest
-        entry: python -m pytest -m "not integration_test"
+        # Bare `python` often hits conda/site-packages without project deps (e.g. langfuse, httpx).
+        # `uv run` uses the repo's Python and lockfile; agentic-xai-eval pulls crewai for vision tests.
+        entry: uv run --group agentic-xai-eval python -m pytest -m "not integration_test"
         language: system
         pass_filenames: false
         always_run: true
+
+  # Run after pytest so formatter edits do not confuse later hooks in the same run.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.7
+    hooks:
+      - id: ruff-format
+        types_or: [python, jupyter]
 
 ci:
   autofix_commit_msg: |

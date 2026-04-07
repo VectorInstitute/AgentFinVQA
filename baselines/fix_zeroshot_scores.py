@@ -35,7 +35,9 @@ from agentfinvqa.eval.eval_outputs import score_answer_accuracy  # noqa: E402
 
 def _try_parse_raw(raw: str) -> str | None:
     """Try to extract an answer from a (possibly truncated) raw JSON string."""
-    raw = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    raw = raw.strip()
+    raw = re.sub(r"^\s*```(?:json)?\s*", "", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"\s*```\s*$", "", raw).strip()
 
     # Happy path
     with contextlib.suppress(Exception):
@@ -47,8 +49,10 @@ def _try_parse_raw(raw: str) -> str | None:
             return json.loads(raw + suffix).get("answer", "")
 
     # Extract answer field with regex as last resort
-    m = re.search(r'"answer"\s*:\s*"([^"]*)"', raw)
+    m = re.search(r'"answer"\s*:\s*"((?:\\.|[^"\\])*)"', raw, flags=re.DOTALL)
     if m:
+        with contextlib.suppress(Exception):
+            return json.loads(f'"{m.group(1)}"')
         return m.group(1)
 
     return None

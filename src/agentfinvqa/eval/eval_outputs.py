@@ -31,12 +31,22 @@ load_dotenv()
 
 def _normalize(text: str) -> str:
     text = text.strip().lower()
+    # Strip leading choice-letter prefix from some models (e.g. "B: sell or avoid…").
+    text = re.sub(r"^[a-z]:\s+", "", text)
     text = re.sub(r"[^\w\s\-\.]", "", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
 def _to_number(text: str) -> Optional[float]:
+    """Extract a scalar for numeric tolerance.
+
+    Returns None for product-style tokens (e.g. Jericho2).
+    """
     text = text.replace(",", "").replace("%", "").strip()
+    # Skip digit-after-letter patterns (Jericho2, 3Q20); avoids false matches like
+    # 1.0 vs Jericho2e + Ramon.
+    if re.search(r"[a-z][0-9]", text.lower()):
+        return None
     m = re.search(r"-?\d+\.?\d*", text)
     try:
         return float(m.group()) if m else None
@@ -136,6 +146,25 @@ def _labels_to_text(labels: list[str], choice_map: dict[str, str]) -> str:
     return " + ".join(choice_map.get(label, label) for label in labels)
 
 
+def resolve_eval_answers(sample: dict, raw_predicted: str) -> tuple[str, str]:
+    """Expand FinMME ``choice_map`` / ``answer_label`` into comparable strings.
+
+    Maps MCQ letter answers (e.g. ``\"B\"``, ``\"AB\"``) to the same canonical
+    phrasing as gold labels so rule-based accuracy matches ``evaluate_mep``.
+    """
+    expected = sample.get("expected_output", "")
+    metadata = sample.get("metadata") or {}
+    choice_map = metadata.get("choice_map") or {}
+    expected_labels = _parse_choice_labels(metadata.get("answer_label", ""), choice_map)
+    predicted_labels = _parse_choice_labels(raw_predicted, choice_map)
+    if expected_labels:
+        expected = _labels_to_text(expected_labels, choice_map)
+    predicted = (raw_predicted or "").strip()
+    if predicted_labels:
+        predicted = _labels_to_text(predicted_labels, choice_map)
+    return expected, predicted
+
+
 # ---------------------------------------------------------------------------
 # Per-MEP evaluation
 # ---------------------------------------------------------------------------
@@ -154,28 +183,19 @@ def evaluate_mep(
     timestamps = mep.get("timestamps", {})
     config = mep.get("config", {})
 
-    expected = sample.get("expected_output", "")
     vision_parsed = vision.get("parsed", {})
     verifier = mep.get("verifier") or {}
     verifier_parsed = verifier.get("parsed") or {}
     verifier_verdict = verifier.get("verdict", "skipped")
 
     # Final answer: use verifier output when it ran, otherwise fall back to vision
-    predicted = verifier_parsed.get("answer") or vision_parsed.get("answer", "")
+    raw_predicted = verifier_parsed.get("answer") or vision_parsed.get("answer", "")
+    expected, predicted = resolve_eval_answers(sample, raw_predicted)
     question_type = sample.get("question_type", "standard")
 
     planner_ms = timestamps.get("planner_ms") or 0
     vision_ms = timestamps.get("vision_ms") or 0
     verifier_ms = timestamps.get("verifier_ms") or 0
-
-    metadata = sample.get("metadata") or {}
-    choice_map = metadata.get("choice_map") or {}
-    expected_labels = _parse_choice_labels(metadata.get("answer_label", ""), choice_map)
-    predicted_labels = _parse_choice_labels(predicted, choice_map)
-    if expected_labels:
-        expected = _labels_to_text(expected_labels, choice_map)
-    if predicted_labels:
-        predicted = _labels_to_text(predicted_labels, choice_map)
 
     metrics: dict = {
         "sample_id": sample.get("sample_id", ""),

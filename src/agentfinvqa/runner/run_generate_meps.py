@@ -38,6 +38,7 @@ from ..mep.schema import (
     MEP,
     ImageRef,
     MEPConfig,
+    MEPLegendGrounding,
     MEPOcr,
     MEPPlan,
     MEPSample,
@@ -46,6 +47,7 @@ from ..mep.schema import (
     MEPVision,
 )
 from ..mep.writer import mep_dataset_split_relpath, write_mep
+from ..tools.legend_grounder_tool import LegendGrounderTool
 from ..tools.ocr_reader_tool import OcrReaderTool
 from ..utils.hashing import sha256_file
 from ..utils.json_strict import parse_strict
@@ -71,6 +73,22 @@ BACKEND_CONFIGS: dict = {
         "planner_model": "gemini-2.5-flash-lite",
         "vision_backend": "gemini",
         "vision_model": "gemini-2.5-flash-lite",
+        "judge_backend": "gemini",
+    },
+    # Full Flash (non-lite) — higher capability, higher cost
+    "gemini_gemini_flash": {
+        "planner_backend": "gemini",
+        "planner_model": "gemini-2.5-flash",
+        "vision_backend": "gemini",
+        "vision_model": "gemini-2.5-flash",
+        "judge_backend": "gemini",
+    },
+    # Gemini 2.5 Flash Preview — latest preview tier
+    "gemini_gemini_flash_preview": {
+        "planner_backend": "gemini",
+        "planner_model": "gemini-2.5-flash-preview-04-17",
+        "vision_backend": "gemini",
+        "vision_model": "gemini-2.5-flash-preview-04-17",
         "judge_backend": "gemini",
     },
     "openai_gemini": {
@@ -111,6 +129,19 @@ DATASET_CONFIGS: dict[str, DatasetConfig] = {
         "display_name": "FinMME",
         "default_image_dir": "data/finmme_images",
     },
+}
+
+# Chart types where legend grounding is worth the extra VLM call
+_LEGEND_GROUNDING_CHART_TYPES = {
+    "line",
+    "bar",
+    "scatter",
+    "area",
+    "bar_grouped",
+    "bar_stacked",
+    "combination",
+    "pie",
+    "donut",
 }
 
 # Fallback plan used when the planner fails entirely
@@ -178,6 +209,24 @@ def _run_verifier_stage(
         else:
             assert raw_verdict is not None
             verifier_verdict = raw_verdict
+
+            # ── Confidence gate: downgrade low-confidence revisions to confirmed ──
+            # The verifier self-reports confidence (0–1). When it wants to revise
+            # but isn't confident enough, we keep the vision answer instead.
+            if verifier_verdict == "revised":
+                try:
+                    ver_confidence = float(verifier_parsed.get("confidence", 0.75))
+                except (TypeError, ValueError):
+                    ver_confidence = 0.75
+                if ver_confidence < 0.75:
+                    verifier_verdict = "confirmed"
+                    verifier_parsed["verdict"] = "confirmed"
+                    verifier_parsed["answer"] = vision_parsed.get("answer", "")
+                    verifier_parsed["reasoning"] = (
+                        f"[Confidence gate: revision confidence {ver_confidence:.2f} < 0.75 — "
+                        f"keeping vision answer. Original reasoning: {verifier_parsed.get('reasoning', '')[:80]}]"
+                    )
+                    errors.append(f"verifier_revision_gated: confidence={ver_confidence:.2f}")
     except Exception as exc:  # pragma: no cover - verifier optional
         errors.append(f"verifier_error: {exc}")
         verifier_parse_error = True
@@ -201,7 +250,7 @@ def _run_verifier_stage(
     )
 
 
-def process_sample(  # noqa: PLR0915
+def process_sample(  # noqa: PLR0912, PLR0915
     sample: PerceivedSample,
     planner: PlannerAgent,
     vision_agent: VisionAgent,
@@ -212,6 +261,7 @@ def process_sample(  # noqa: PLR0915
     lf_client: Any = None,
     verifier_agent: Optional[VerifierAgent] = None,
     ocr_tool: Optional[OcrReaderTool] = None,
+    legend_grounder: Optional[LegendGrounderTool] = None,
 ) -> str:
     """
     Execute the multi-stage evaluation pipeline for a single sample.
@@ -306,6 +356,37 @@ def process_sample(  # noqa: PLR0915
                 ocr_parse_error = True
                 traceback.print_exc()
 
+        # ---- Legend grounding (optional, between OCR and vision) ----
+        legend_grounding_triggered = False
+        legend_map: list = []
+        legend_grounding_parse_error = False
+        legend_grounding_traces: list = []
+        compliance_retry_triggered = False
+
+        ocr_legend = ocr_parsed.get("legend", []) if ocr_parsed else []
+        ocr_chart_type = (ocr_parsed.get("chart_type") or "").strip().lower() if ocr_parsed else ""
+        should_ground = (
+            legend_grounder is not None and len(ocr_legend) > 1 and ocr_chart_type in _LEGEND_GROUNDING_CHART_TYPES
+        )
+
+        if should_ground:
+            legend_grounding_triggered = True
+            try:
+                legend_grounder.lf_trace = lf_trace  # type: ignore[union-attr]
+                lg_raw = legend_grounder._run(  # type: ignore[union-attr]
+                    image_path=sample.image_path,
+                    legend_list=ocr_legend,
+                )
+                legend_grounding_traces = legend_grounder.pop_traces()  # type: ignore[union-attr]
+                lg_parsed, lg_ok = parse_strict(lg_raw, required_keys=["legend_map"])
+                legend_grounding_parse_error = not lg_ok
+                if lg_ok and isinstance(lg_parsed.get("legend_map"), list):
+                    legend_map = lg_parsed["legend_map"]
+            except Exception as exc:
+                errors.append(f"legend_grounding_error: {exc}")
+                legend_grounding_parse_error = True
+                traceback.print_exc()
+
         # ---- Vision ----
         vision_prompt = ""
         vision_parsed: dict = {}
@@ -313,6 +394,8 @@ def process_sample(  # noqa: PLR0915
         vision_raw = ""
         vision_traces: list = []
         vision_ms = 0.0
+
+        _vision_legend_map = legend_map if legend_grounding_triggered and not legend_grounding_parse_error else None
 
         try:
             with timed() as vt:
@@ -327,6 +410,7 @@ def process_sample(  # noqa: PLR0915
                     plan_parsed,
                     lf_trace=lf_trace,
                     ocr_result=ocr_parsed if ocr_parsed else None,
+                    legend_map=_vision_legend_map,
                 )
             vision_ms = vt.elapsed_ms
         except Exception as exc:
@@ -334,6 +418,82 @@ def process_sample(  # noqa: PLR0915
             vision_parsed = {"answer": "ERROR", "explanation": str(exc)}
             vision_parse_error = True
             traceback.print_exc()
+
+        # ---- Legend compliance check (only when legend grounding was active) ----
+        if legend_grounding_triggered and not legend_grounding_parse_error and legend_map and not vision_parse_error:
+            explanation = vision_parsed.get("explanation", "") or ""
+            label_mentioned = any(
+                entry.get("label", "").lower() in explanation.lower() for entry in legend_map if entry.get("label")
+            )
+            if not label_mentioned:
+                compliance_retry_triggered = True
+                retry_instruction = (
+                    "IMPORTANT: Your previous response did not reference the pre-mapped "
+                    "legend entries by name. You must begin your analysis by explicitly "
+                    "stating which color you are reading for each series mentioned in "
+                    "your answer, using the pre-mapped legend above."
+                )
+                try:
+                    (
+                        vision_prompt,
+                        vision_parsed,
+                        vision_parse_error,
+                        vision_raw,
+                        vision_traces,
+                    ) = vision_agent.run(
+                        sample,
+                        plan_parsed,
+                        lf_trace=lf_trace,
+                        ocr_result=ocr_parsed if ocr_parsed else None,
+                        legend_map=_vision_legend_map,
+                        prepend_instruction=retry_instruction,
+                    )
+                except Exception as exc:
+                    errors.append(f"vision_compliance_retry_error: {exc}")
+                    traceback.print_exc()
+
+        # ---- Forced-choice retry (UNANSWERABLE + MCQ) ----
+        # If vision refused to answer but choices exist, force a selection before
+        # handing off to the verifier — the verifier's override often fires too late.
+        _vision_ua = vision_parsed.get("answer", "").strip().upper() == "UNANSWERABLE"
+        _sample_choices: list = []
+        _meta = getattr(sample, "metadata", {}) or {}
+        _labeled = _meta.get("choices_labeled") or []
+        if _labeled:
+            _sample_choices = [f"{item.get('label')}: {item.get('text')}" for item in _labeled]
+        elif getattr(sample, "choices", None):
+            _sample_choices = list(sample.choices)
+
+        if _vision_ua and _sample_choices and not vision_parse_error:
+            _choices_text = "\n".join(f"  - {c}" for c in _sample_choices)
+            _forced_instruction = (
+                "FORCED CHOICE — your previous response returned UNANSWERABLE, which is not "
+                "permitted when MCQ choices are provided.\n"
+                "You MUST select one of the following options based on whatever visual evidence "
+                "is available in the chart. Even if the chart is partially occluded or labels "
+                "are small, pick the most visually plausible option and note your uncertainty "
+                "in the explanation.\n\n"
+                f"Available choices:\n{_choices_text}\n\n"
+                "Do NOT output UNANSWERABLE. Output the letter or exact text of the best choice."
+            )
+            try:
+                (
+                    vision_prompt,
+                    vision_parsed,
+                    vision_parse_error,
+                    vision_raw,
+                    vision_traces,
+                ) = vision_agent.run(
+                    sample,
+                    plan_parsed,
+                    lf_trace=lf_trace,
+                    ocr_result=ocr_parsed if ocr_parsed else None,
+                    legend_map=_vision_legend_map,
+                    prepend_instruction=_forced_instruction,
+                )
+            except Exception as exc:
+                errors.append(f"vision_forced_choice_retry_error: {exc}")
+                traceback.print_exc()
 
         # ---- Verifier (Pass 2.5) ----
         (
@@ -390,6 +550,15 @@ def process_sample(  # noqa: PLR0915
             )
             if ocr_tool is not None
             else None,
+            legend_grounding=MEPLegendGrounding(
+                triggered=legend_grounding_triggered,
+                legend_map=legend_map,
+                parse_error=legend_grounding_parse_error,
+                compliance_retry_triggered=compliance_retry_triggered,
+                tool_trace=legend_grounding_traces,
+            )
+            if legend_grounding_triggered
+            else None,
             vision=MEPVision(
                 prompt=vision_prompt,
                 raw_text=vision_raw,
@@ -420,14 +589,14 @@ def process_sample(  # noqa: PLR0915
         )
 
         # ---- Immediately log available scores to Langfuse ----
-        log_trace_scores(
-            lf_trace,
-            {
-                "planner_parse_ok": float(not plan_parse_error),
-                "vision_parse_ok": float(not vision_parse_error),
-                "has_errors": float(bool(errors)),
-            },
-        )
+        scores: dict = {
+            "planner_parse_ok": float(not plan_parse_error),
+            "vision_parse_ok": float(not vision_parse_error),
+            "has_errors": float(bool(errors)),
+        }
+        if legend_grounding_triggered:
+            scores["legend_compliance"] = float(not compliance_retry_triggered)
+        log_trace_scores(lf_trace, scores)
         if lf_trace:
             lf_trace.update(output=vision_parsed if vision_parsed else None)
 
@@ -467,7 +636,7 @@ def main() -> None:  # noqa: PLR0912, PLR0915
     parser.add_argument(
         "--config",
         default="gemini_gemini",
-        choices=list(BACKEND_CONFIGS.keys()),
+        choices=sorted(BACKEND_CONFIGS.keys()),
         help="Backend config preset",
     )
     parser.add_argument("--workers", type=int, default=1, help="Parallel workers (1 = sequential)")
@@ -491,6 +660,7 @@ def main() -> None:  # noqa: PLR0912, PLR0915
     )
     parser.add_argument("--no_verifier", action="store_true", help="Skip Pass 2.5 verifier agent")
     parser.add_argument("--no_ocr", action="store_true", help="Skip OCR pre-read step")
+    parser.add_argument("--no_legend_grounding", action="store_true", help="Skip legend grounding stage")
     parser.add_argument("--run_tag", default=None, help="Subfolder tag within dataset dir (e.g. planner_v2)")
     parser.add_argument("--no_langfuse", action="store_true", help="Disable Langfuse dataset/prompt registration")
     parser.add_argument(
@@ -592,6 +762,15 @@ def main() -> None:  # noqa: PLR0912, PLR0915
         print(f"OCR pre-reader   : enabled ({config['vision_backend']} / {ocr_model})")
     else:
         print("OCR pre-reader   : disabled (--no_ocr)")
+
+    legend_grounder: Optional[LegendGrounderTool] = None
+    if not args.no_ocr and not args.no_legend_grounding:
+        lg_model = args.ocr_model or config["vision_model"]
+        legend_grounder = LegendGrounderTool(backend=config["vision_backend"], model=lg_model)
+        print(f"Legend grounder  : enabled ({config['vision_backend']} / {lg_model})")
+    else:
+        reason = "--no_ocr" if args.no_ocr else "--no_legend_grounding"
+        print(f"Legend grounder  : disabled ({reason})")
     print()
 
     if args.workers <= 1:
@@ -609,6 +788,7 @@ def main() -> None:  # noqa: PLR0912, PLR0915
                     lf_client,
                     verifier,
                     ocr,
+                    legend_grounder,
                 )
                 print(f"OK → {path}")
             except Exception as exc:
@@ -628,6 +808,7 @@ def main() -> None:  # noqa: PLR0912, PLR0915
                     lf_client,
                     verifier,
                     ocr,
+                    legend_grounder,
                 ): s
                 for s in samples
             }

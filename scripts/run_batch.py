@@ -72,6 +72,8 @@ def _build_runner_args(args: argparse.Namespace) -> list[str]:
         cmd.append("--no_verifier")
     if args.no_ocr:
         cmd.append("--no_ocr")
+    if args.no_legend_grounding:
+        cmd.append("--no_legend_grounding")
     _append("--run_tag", args.run_tag)
     if not args.langfuse:
         cmd.append("--no_langfuse")
@@ -224,6 +226,7 @@ def main() -> None:
     parser.add_argument("--ocr_model", default=None, help="OCR model override")
     parser.add_argument("--no_verifier", action="store_true", help="Disable verifier")
     parser.add_argument("--no_ocr", action="store_true", help="Disable OCR preread")
+    parser.add_argument("--no_legend_grounding", action="store_true", help="Disable legend grounding stage")
     parser.add_argument("--run_tag", default=None, help="Subfolder tag within dataset dir (e.g. planner_v2)")
     parser.add_argument("--langfuse", action="store_true", help="Enable Langfuse tracing")
     parser.add_argument("--resume", action="store_true", help="Skip samples whose MEPs already exist")
