@@ -15,7 +15,7 @@ from crewai import LLM, Agent, Crew, Task
 
 from ..agents.vision_agent import _is_multi_select
 from ..langfuse_integration.tracing import close_span, open_llm_span
-from ..tools.verifier_tool import VerifierTool
+from ..tools.verifier_tool import VerifierTool, format_source_sentences_block
 from ..utils.json_strict import parse_strict
 from ..utils.model_compat import openai_temperature
 
@@ -106,6 +106,12 @@ class VerifierAgent:
             choices = list(sample.choices)
 
         caption = (meta.get("verified_caption") or "").strip()
+        # When the sample's metadata carries analyst-written source sentences in
+        # ``related_sentences``, pass them through to the verifier prompt so it can
+        # cross-check numeric / categorical claims in the draft answer against the
+        # original text grounding. Field is optional — datasets without this signal
+        # leave the block empty.
+        related_sentences = meta.get("related_sentences")
         is_ms = _is_multi_select(sample)
 
         # Compute min choice_analysis confidence from vision output
@@ -116,21 +122,23 @@ class VerifierAgent:
         steps_text = "\n".join(f"  {i + 1}. {s}" for i, s in enumerate(plan_steps)) or "  (none)"
         choices_text = ("\nMCQ Choices:\n" + "\n".join(f"  - {c}" for c in choices) + "\n") if choices else ""
         caption_text = (
-            f"\nChart context (analyst caption — use as background, not as the answer):\n  {caption}\n"
+            "\nChart context (analyst caption — cross-check the draft answer against this text; "
+            "REVISE if a value or category here clearly contradicts the draft, but do NOT revise "
+            f"on phrasing differences alone):\n  {caption}\n"
             if caption
             else ""
         )
-        # Reluctance hint when vision was highly confident
-        if vision_min_conf >= 0.95:
-            reluctance_note = (
-                "\n⚠ HIGH-CONFIDENCE VISION: the vision agent reported high confidence (≥0.95) on all choices. "
-                "Only REVISE if you can identify a specific, clear factual error with direct visual evidence. "
-                "If merely uncertain, set confidence < 0.75 and CONFIRM.\n"
-            )
-        elif vision_min_conf >= 0.85:
-            reluctance_note = "\n⚠ The vision agent was reasonably confident. REVISE only for clear, specific errors.\n"
-        else:
-            reluctance_note = ""
+        source_sentences_text = format_source_sentences_block(related_sentences, leading_newline=True)
+        # Reluctance hint when vision was highly confident (single expression to keep run() compact).
+        reluctance_note = (
+            "\n⚠ HIGH-CONFIDENCE VISION: the vision agent reported high confidence (≥0.95) on all choices. "
+            "Only REVISE if you can identify a specific, clear factual error with direct visual evidence. "
+            "If merely uncertain, set confidence < 0.75 and CONFIRM.\n"
+            if vision_min_conf >= 0.95
+            else "\n⚠ The vision agent was reasonably confident. REVISE only for clear, specific errors.\n"
+            if vision_min_conf >= 0.85
+            else ""
+        )
 
         multi_select_note = (
             "\n⚠ MULTI-SELECT: verify EACH choice independently. "
@@ -145,6 +153,7 @@ class VerifierAgent:
             f"Image path       : {image_path}\n"
             f"{choices_text}"
             f"{caption_text}"
+            f"{source_sentences_text}"
             f"{reluctance_note}"
             f"{multi_select_note}\n"
             f"Inspection plan the agent followed:\n{steps_text}\n\n"
@@ -188,6 +197,8 @@ class VerifierAgent:
                 "When calling verifier_tool, pass:\n"
                 "  - `choices`: MCQ choices listed above (empty list if none)\n"
                 "  - `caption`: analyst caption if shown above (empty string if none)\n"
+                "  - `related_sentences`: list of source sentences from the 'Source sentences' block above "
+                "(empty list if no such block was shown)\n"
                 + (
                     "  - `multi_select`: True — this is a multi-select question; answer must contain ALL correct letters.\n"
                     if is_ms
