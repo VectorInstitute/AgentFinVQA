@@ -7,7 +7,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import threading
 from typing import Any
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -149,16 +148,14 @@ def run_post_evaluation(
 
     judge_model = judge_model or config.get("vision_model") or config.get("planner_model") or "gemini-2.5-flash-lite"
     lf_client = get_client() if use_langfuse else None
-    metrics_list: list[dict] = []
-    taxonomy_rows = 0
-    write_lock = threading.Lock()
 
-    with (
-        open(metrics_path, "w") as f_met,
-        open(trace_path, "w") as f_trace,
-        open(taxonomy_path, "w") as f_tax,
-        ThreadPoolExecutor(max_workers=workers) as pool,
-    ):
+    # Accumulate all completed results in memory, then sort by sample_id and
+    # write at the end. ThreadPoolExecutor yields futures in completion order,
+    # which is non-deterministic across workers; sorting makes the on-disk
+    # artifacts deterministic and diff-friendly between runs.
+    results: list[tuple[str, dict, dict, dict | None]] = []
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
         all_meps = list(iter_meps(str(out_dir)))
         if mep_start > 0:
             print(f"[post-eval] Skipping first {mep_start} MEPs (mep_start={mep_start}, total={len(all_meps)})")
@@ -172,17 +169,26 @@ def run_post_evaluation(
             except Exception as exc:
                 print(f"  [eval] {sid} ERROR: {exc}")
                 continue
-            with write_lock:
-                metrics_list.append(row)
-                f_met.write(json.dumps(row) + "\n")
-                f_trace.write(json.dumps(trace_row) + "\n")
-                if tax_row:
-                    f_tax.write(json.dumps(tax_row) + "\n")
-                    taxonomy_rows += 1
+            results.append((sid, row, trace_row, tax_row))
 
-    if not metrics_list:
+    if not results:
         print("[post-eval] No metrics produced.")
         return
+
+    results.sort(key=lambda t: t[0])
+    metrics_list: list[dict] = [row for _, row, _, _ in results]
+    taxonomy_rows = sum(1 for _, _, _, tax in results if tax)
+
+    with (
+        open(metrics_path, "w") as f_met,
+        open(trace_path, "w") as f_trace,
+        open(taxonomy_path, "w") as f_tax,
+    ):
+        for _, row, trace_row, tax_row in results:
+            f_met.write(json.dumps(row) + "\n")
+            f_trace.write(json.dumps(trace_row) + "\n")
+            if tax_row:
+                f_tax.write(json.dumps(tax_row) + "\n")
 
     acc = sum(m.get("answer_accuracy", 0.0) for m in metrics_list) / len(metrics_list)
     print(f"[post-eval] Accuracy {acc:.1%} (n={len(metrics_list)})")

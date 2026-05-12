@@ -127,7 +127,7 @@ echo ""
 # Job 1: MEP generation (optionally held until AFTER_JOB completes)
 JOB1_DEP=""
 [[ -n "$AFTER_JOB" ]] && JOB1_DEP="--dependency=afterok:${AFTER_JOB}"
-JOB1=$(sbatch --parsable --export=ALL --job-name="${JOB_NAME}" $JOB1_DEP scripts/slurm_run_batch.slrm)
+JOB1=$(sbatch --parsable --export=ALL --job-name="${JOB_NAME}" --cpus-per-task="${WORKERS}" $JOB1_DEP scripts/slurm_run_batch.slrm)
 echo "Job 1 (generate) submitted: $JOB1"
 
 # Load SLURM module so sbatch is available

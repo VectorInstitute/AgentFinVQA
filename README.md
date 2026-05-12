@@ -79,7 +79,7 @@ Input Sample (question, chart image, expected answer)
 
 ## Results
 
-### FinMME (250-sample train slice, judge-based accuracy)
+### FinMME (250-sample train slice; v8 scale-up to 1,250)
 
 | Run | Accuracy | Δ vs baseline | Key change |
 |-----|----------|---------------|------------|
@@ -90,16 +90,16 @@ Input Sample (question, chart image, expected answer)
 | `fixes_v4_g3flash` | 56.0% | +8.0 pp | Gemini 3 Flash, forced-choice retry, MCQ-aware planner |
 | `fixes_v5_multiselect` | **69.4%** | +21.4 pp | Full multi-select MCQ support |
 | `fixes_v7_g3flash_conf_gate` | **69.6%** | +21.6 pp | Confidence gate fix, fresh g3flash run |
+| `fixes_v8_g3flash_color_area` | **71.2%** *(n = 1,250)* | +23.2 pp | Color-area OpenCV pre-hint; see `results.md` §8b |
 
-**vs. FinMME paper (Table 3, Gemini Flash 2.0 = 51.85%):** our best run achieves **+17.8 pp**.
+**vs. FinMME paper (Table 3, Gemini Flash 2.0 = 51.85%):** our best **250-ID** ladder run achieves **+17.8 pp** (v7 mean `answer_accuracy` vs paper headline — metric families differ).
 
-**Fair same-model baseline (250 FinMME IDs):**
+**Fair same-model baseline (Gemini-3 Flash Preview structured zero-shot vs agent):**
 
-- Zero-shot `gemini-3-flash-preview` (structured): **52.8%** exact
-- Agent `fixes_v7_g3flash_conf_gate`: **62.8%** exact
-- Margin: **+10.0 pp**
+- **Primary (matched n = 1,250 train IDs):** zero-shot mean `answer_accuracy` **63.56%** vs agent **`fixes_v8_g3flash_color_area`** **71.24%** → **+7.68 pp** (exact-accuracy gap **+8.72 pp**; McNemar **p ≪ 0.001**). Full zero-shot train file: **11,099** rows — always join on `sample_id` before comparing.
+- **Legacy 250-ID snapshot (strict exact, ablation era):** zero-shot **52.8%** vs agent v7 **62.8%** → **+10.0 pp** — useful historically; see `results.md` §8b for context.
 
-> Note: the initial zero-shot Gemini-3 file had parser-related empty predictions; after robust answer extraction repair, 141 rows were recovered and re-scored.
+> Note: the initial zero-shot Gemini-3 export had parser-related empty predictions; robust extraction + repair recovered many rows before the full 11k re-run.
 
 Detailed per-run analysis, per-type breakdowns, and paper comparison are in [`notebooks/results_analysis.ipynb`](notebooks/results_analysis.ipynb).
 For camera-ready citation numbers, see [`markdown/camera_ready_metrics.md`](markdown/camera_ready_metrics.md).

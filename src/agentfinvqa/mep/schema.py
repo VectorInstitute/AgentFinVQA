@@ -138,6 +138,24 @@ class MEPLegendGrounding:
 
 
 @dataclass
+class MEPColorArea:
+    """Trace of the color-area measurement stage inserted between legend grounding and vision.
+
+    Captures whether the stage was triggered, the per-label pixel-area breakdown,
+    the dominant label, and confidence/ambiguity flags.
+    """
+
+    triggered: bool = False
+    breakdown: Dict[str, float] = field(default_factory=dict)
+    largest: Optional[str] = None
+    total_pixels_matched: int = 0
+    low_confidence: bool = False
+    color_ambiguity: bool = False
+    parse_error: bool = False
+    tool_trace: List[Dict] = field(default_factory=list)
+
+
+@dataclass
 class MEPTimestamps:
     """Timestamps for the different steps of the agent run.
 
@@ -170,6 +188,7 @@ class MEP:
     plan: Optional[MEPPlan] = None
     ocr: Optional[MEPOcr] = None  # None when OCR step is skipped
     legend_grounding: Optional[MEPLegendGrounding] = None  # None when not triggered
+    color_area: Optional[MEPColorArea] = None  # None when not triggered
     vision: Optional[MEPVision] = None
     verifier: Optional[MEPVerifier] = None  # Pass 2.5 — None when skipped
     timestamps: Optional[MEPTimestamps] = None

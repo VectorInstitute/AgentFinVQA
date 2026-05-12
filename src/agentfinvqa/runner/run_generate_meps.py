@@ -19,6 +19,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Callable, Optional, TypedDict
 
+import cv2
 from dotenv import load_dotenv
 
 from ..agents.planner_agent import PlannerAgent
@@ -37,6 +38,7 @@ from ..langfuse_integration.tracing import (
 from ..mep.schema import (
     MEP,
     ImageRef,
+    MEPColorArea,
     MEPConfig,
     MEPLegendGrounding,
     MEPOcr,
@@ -47,6 +49,11 @@ from ..mep.schema import (
     MEPVision,
 )
 from ..mep.writer import mep_dataset_split_relpath, write_mep
+from ..tools.color_area_tool import (
+    check_color_ambiguity,
+    color_area_tool,
+    should_trigger_color_area,
+)
 from ..tools.legend_grounder_tool import LegendGrounderTool
 from ..tools.ocr_reader_tool import OcrReaderTool
 from ..utils.hashing import sha256_file
@@ -157,6 +164,15 @@ _FALLBACK_PLAN = {
     "answerability_check": "uncertain",
     "hints": [],
 }
+
+
+def estimated_chart_area_pixels(image_path: str) -> int:
+    """Return an estimate of the chart region pixel count (top 85 % × left 75 %)."""
+    img = cv2.imread(image_path)
+    if img is None:
+        return 0
+    h, w = img.shape[:2]
+    return int(h * 0.85 * w * 0.75)
 
 
 def _run_verifier_stage(
@@ -387,6 +403,37 @@ def process_sample(  # noqa: PLR0912, PLR0915
                 legend_grounding_parse_error = True
                 traceback.print_exc()
 
+        # ---- Color area (optional; after legend grounding, before vision) ----
+        color_area_triggered = False
+        color_area_breakdown: dict = {}
+        color_area_largest: Optional[str] = None
+        color_area_total_pixels = 0
+        color_area_low_confidence = False
+        color_area_ambiguity = False
+        color_area_parse_error = False
+
+        _active_legend_map = legend_map if legend_grounding_triggered and not legend_grounding_parse_error else []
+        if should_trigger_color_area(ocr_chart_type, _active_legend_map, sample.question):
+            color_area_triggered = True
+            try:
+                if check_color_ambiguity(_active_legend_map):
+                    color_area_ambiguity = True
+                else:
+                    ca_result = color_area_tool(sample.image_path, _active_legend_map)
+                    color_area_breakdown = ca_result.get("breakdown", {})
+                    color_area_largest = ca_result.get("largest")
+                    color_area_total_pixels = ca_result.get("total_pixels_matched", 0)
+                    if ca_result.get("error"):
+                        color_area_parse_error = True
+                    else:
+                        chart_pixel_total = estimated_chart_area_pixels(sample.image_path)
+                        if chart_pixel_total > 0 and color_area_total_pixels < chart_pixel_total * 0.05:
+                            color_area_low_confidence = True
+            except Exception as exc:
+                errors.append(f"color_area_error: {exc}")
+                color_area_parse_error = True
+                traceback.print_exc()
+
         # ---- Vision ----
         vision_prompt = ""
         vision_parsed: dict = {}
@@ -396,6 +443,19 @@ def process_sample(  # noqa: PLR0912, PLR0915
         vision_ms = 0.0
 
         _vision_legend_map = legend_map if legend_grounding_triggered and not legend_grounding_parse_error else None
+        _vision_color_area = (
+            MEPColorArea(
+                triggered=color_area_triggered,
+                breakdown=color_area_breakdown,
+                largest=color_area_largest,
+                total_pixels_matched=color_area_total_pixels,
+                low_confidence=color_area_low_confidence,
+                color_ambiguity=color_area_ambiguity,
+                parse_error=color_area_parse_error,
+            )
+            if color_area_triggered
+            else None
+        )
 
         try:
             with timed() as vt:
@@ -411,6 +471,7 @@ def process_sample(  # noqa: PLR0912, PLR0915
                     lf_trace=lf_trace,
                     ocr_result=ocr_parsed if ocr_parsed else None,
                     legend_map=_vision_legend_map,
+                    color_area=_vision_color_area,
                 )
             vision_ms = vt.elapsed_ms
         except Exception as exc:
@@ -446,6 +507,7 @@ def process_sample(  # noqa: PLR0912, PLR0915
                         lf_trace=lf_trace,
                         ocr_result=ocr_parsed if ocr_parsed else None,
                         legend_map=_vision_legend_map,
+                        color_area=_vision_color_area,
                         prepend_instruction=retry_instruction,
                     )
                 except Exception as exc:
@@ -489,6 +551,7 @@ def process_sample(  # noqa: PLR0912, PLR0915
                     lf_trace=lf_trace,
                     ocr_result=ocr_parsed if ocr_parsed else None,
                     legend_map=_vision_legend_map,
+                    color_area=_vision_color_area,
                     prepend_instruction=_forced_instruction,
                 )
             except Exception as exc:
@@ -558,6 +621,17 @@ def process_sample(  # noqa: PLR0912, PLR0915
                 tool_trace=legend_grounding_traces,
             )
             if legend_grounding_triggered
+            else None,
+            color_area=MEPColorArea(
+                triggered=color_area_triggered,
+                breakdown=color_area_breakdown,
+                largest=color_area_largest,
+                total_pixels_matched=color_area_total_pixels,
+                low_confidence=color_area_low_confidence,
+                color_ambiguity=color_area_ambiguity,
+                parse_error=color_area_parse_error,
+            )
+            if color_area_triggered
             else None,
             vision=MEPVision(
                 prompt=vision_prompt,

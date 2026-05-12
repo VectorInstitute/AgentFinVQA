@@ -12,6 +12,8 @@ from crewai import LLM, Agent, Crew, Task
 
 from ..datasets.perceived_sample import PerceivedSample
 from ..langfuse_integration.tracing import close_span, open_llm_span
+from ..mep.schema import MEPColorArea
+from ..tools.color_area_tool import format_color_area_block_for_vision
 from ..tools.vision_qa_tool import VisionQATool
 from ..utils.json_strict import parse_strict
 from ..utils.model_compat import openai_temperature
@@ -179,6 +181,7 @@ def build_vision_task_description(
     plan: dict,
     ocr_result: Optional[dict] = None,
     legend_map: Optional[List[dict]] = None,
+    color_area: Optional[MEPColorArea] = None,
     prepend_instruction: Optional[str] = None,
 ) -> str:
     """
@@ -197,6 +200,8 @@ def build_vision_task_description(
         Pre-extracted text data from the chart image.
     legend_map : list of dict, optional
         Structured color-to-series mapping from LegendGrounderTool.
+    color_area : MEPColorArea, optional
+        Optional pixel-area breakdown from the color-area tool stage.
     prepend_instruction : str, optional
         Extra instruction to prepend to the prompt (used for compliance retry).
 
@@ -211,6 +216,7 @@ def build_vision_task_description(
     plan_steps_block = _format_plan_steps(plan)
     ocr_block = _format_ocr_block(ocr_result)
     legend_grounding_block = _format_legend_grounding_block(legend_map)
+    color_area_block = format_color_area_block_for_vision(color_area)
     caption_block = _format_caption_block(sample)
     multi_select_block = _format_multi_select_block(sample)
 
@@ -222,6 +228,7 @@ def build_vision_task_description(
         context_block=context_block,
         ocr_block=ocr_block,
         legend_grounding_block=legend_grounding_block,
+        color_area_block=color_area_block,
         caption_block=caption_block,
         multi_select_block=multi_select_block,
         plan_steps_block=plan_steps_block,
@@ -348,6 +355,7 @@ class VisionAgent:
         lf_trace: Any = None,
         ocr_result: Optional[dict] = None,
         legend_map: Optional[List[dict]] = None,
+        color_area: Optional[MEPColorArea] = None,
         prepend_instruction: Optional[str] = None,
     ) -> Tuple[str, dict, bool, str, List[dict]]:
         """
@@ -368,6 +376,8 @@ class VisionAgent:
             Ground-truth OCR data for grounding.
         legend_map : list of dict, optional
             Structured color-to-series mapping from LegendGrounderTool.
+        color_area : MEPColorArea, optional
+            Pixel-area breakdown for size-comparison questions.
         prepend_instruction : str, optional
             Extra instruction to prepend (used for compliance retry).
 
@@ -391,6 +401,7 @@ class VisionAgent:
             plan,
             ocr_result=ocr_result,
             legend_map=legend_map,
+            color_area=color_area,
             prepend_instruction=prepend_instruction,
         )
 
