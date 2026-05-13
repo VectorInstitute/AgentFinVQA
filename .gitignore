@@ -44,3 +44,11 @@ logs/
 # Bash and SLURM scripts
 *.slrm
 *.backup
+
+# Run artifacts
+output/
+meps/
+logs/
+
+# Editor copies
+*copy*.ipynb
