@@ -16,6 +16,7 @@
 #   --out_label LABEL      Label for output files (default: DATASET_SPLIT)
 #   --no_verifier          MEPs live under <dataset>/no_verifier/<split> (match generation)
 #   --no_ocr               MEPs live under <dataset>/no_ocr/<split> (match generation)
+#   --eval_resume          Merge with existing metrics_*.jsonl: skip sample_ids already scored
 #   --after JOB_ID         Hold until JOB_ID completes successfully (optional)
 
 set -euo pipefail
@@ -37,6 +38,7 @@ JUDGE_MODEL="gemini-2.5-flash-lite"
 MEP_START=0
 USE_JUDGE=0
 LANGFUSE=0
+EVAL_RESUME=0
 EVAL_DIR="output"
 OUT_LABEL=""
 AFTER_JOB=""
@@ -53,6 +55,7 @@ while [[ $# -gt 0 ]]; do
         --judge_model) JUDGE_MODEL="$2"; shift 2 ;;
         --mep_start)   MEP_START="$2";   shift 2 ;;
         --use_judge)   USE_JUDGE=1;      shift ;;
+        --eval_resume) EVAL_RESUME=1;    shift ;;
         --langfuse)  LANGFUSE=1;     shift ;;
         --no_verifier) NO_VERIFIER=1;  shift ;;
         --no_ocr)      NO_OCR=1;       shift ;;
@@ -66,7 +69,7 @@ done
 
 OUT_LABEL="${OUT_LABEL:-${DATASET}_${SPLIT}}"
 
-export DATASET SPLIT CONFIG WORKERS JUDGE_MODEL MEP_START USE_JUDGE LANGFUSE EVAL_DIR OUT_LABEL NO_VERIFIER NO_OCR RUN_TAG
+export DATASET SPLIT CONFIG WORKERS JUDGE_MODEL MEP_START USE_JUDGE LANGFUSE EVAL_RESUME EVAL_DIR OUT_LABEL NO_VERIFIER NO_OCR RUN_TAG
 
 echo "=== Submitting eval-only job ==="
 echo "  Dataset      : $DATASET"
@@ -75,6 +78,7 @@ echo "  Config       : $CONFIG"
 echo "  Workers      : $WORKERS"
 echo "  Judge model  : $JUDGE_MODEL"
 echo "  Use judge    : $USE_JUDGE"
+echo "  Eval resume  : $EVAL_RESUME"
 echo "  Langfuse     : $LANGFUSE"
 echo "  Eval dir     : $EVAL_DIR"
 echo "  Output label : $OUT_LABEL"
