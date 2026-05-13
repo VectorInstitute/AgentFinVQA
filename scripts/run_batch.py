@@ -82,6 +82,47 @@ def _build_runner_args(args: argparse.Namespace) -> list[str]:
     return cmd
 
 
+def _load_jsonl_by_sample_id(path: Path) -> dict[str, dict]:
+    """Last JSON object per ``sample_id`` from a JSONL file (for resume merges)."""
+    out: dict[str, dict] = {}
+    if not path.exists():
+        return out
+    for line in path.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        with contextlib.suppress(json.JSONDecodeError):
+            row = json.loads(stripped)
+            sid = row.get("sample_id")
+            if isinstance(sid, str) and sid:
+                out[sid] = row
+    return out
+
+
+def _merge_eval_resume(
+    existing_metrics: dict[str, dict],
+    existing_trace: dict[str, dict],
+    existing_tax: dict[str, dict],
+    new_results: list[tuple[str, dict, dict, dict | None]],
+    allowed_ids: set[str],
+) -> tuple[dict[str, dict], dict[str, dict], dict[str, dict]]:
+    merged_m = dict(existing_metrics)
+    merged_tr = dict(existing_trace)
+    merged_tx = dict(existing_tax)
+    for sid in {t[0] for t in new_results}:
+        merged_tx.pop(sid, None)
+    for sid, row, trace_row, tax_row in new_results:
+        merged_m[sid] = row
+        merged_tr[sid] = trace_row
+        if tax_row:
+            merged_tx[sid] = tax_row
+    if allowed_ids:
+        merged_m = {k: v for k, v in merged_m.items() if k in allowed_ids}
+        merged_tr = {k: v for k, v in merged_tr.items() if k in allowed_ids}
+        merged_tx = {k: v for k, v in merged_tx.items() if k in allowed_ids}
+    return merged_m, merged_tr, merged_tx
+
+
 def _eval_mep(
     mep: dict,
     config: dict,
@@ -123,6 +164,50 @@ def _eval_mep(
     return row, trace_row, tax_row
 
 
+def _collect_eval_results(
+    out_dir: Path,
+    config: dict,
+    use_judge: bool,
+    judge_model: str,
+    lf_client: Any,
+    workers: int,
+    mep_start: int,
+    resume_eval: bool,
+    existing_metrics: dict[str, dict],
+    metrics_path: Path,
+) -> tuple[list[tuple[str, dict, dict, dict | None]], list]:
+    """Run threaded MEP eval; return ``(results, all_meps_slice)``."""
+    results: list[tuple[str, dict, dict, dict | None]] = []
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        all_meps = list(iter_meps(str(out_dir)))
+        if mep_start > 0:
+            print(f"[post-eval] Skipping first {mep_start} MEPs (mep_start={mep_start}, total={len(all_meps)})")
+            all_meps = all_meps[mep_start:]
+
+        completed = set(existing_metrics.keys()) if resume_eval else set()
+        if resume_eval and completed:
+            meps_to_run = [m for m in all_meps if m.get("sample", {}).get("sample_id") not in completed]
+            skipped = len(all_meps) - len(meps_to_run)
+            if skipped:
+                print(f"[post-eval] resume: skipping {skipped} sample_ids already in {metrics_path.name}")
+        else:
+            meps_to_run = list(all_meps)
+
+        if not meps_to_run:
+            print("[post-eval] resume: no MEPs left to score in this pass.")
+        futures = {pool.submit(_eval_mep, mep, config, use_judge, judge_model, lf_client): mep for mep in meps_to_run}
+        for future in as_completed(futures):
+            mep = futures[future]
+            sid = mep.get("sample", {}).get("sample_id", "?")
+            try:
+                row, trace_row, tax_row = future.result()
+            except Exception as exc:
+                print(f"  [eval] {sid} ERROR: {exc}")
+                continue
+            results.append((sid, row, trace_row, tax_row))
+    return results, all_meps
+
+
 def run_post_evaluation(
     out_dir: Path,
     label: str,
@@ -133,6 +218,7 @@ def run_post_evaluation(
     workers: int = 4,
     judge_model: str | None = None,
     mep_start: int = 0,
+    resume_eval: bool = False,
 ) -> None:
     """Compute metrics, traces, taxonomy, and summary using a thread pool."""
     if not out_dir.exists():
@@ -149,46 +235,48 @@ def run_post_evaluation(
     judge_model = judge_model or config.get("vision_model") or config.get("planner_model") or "gemini-2.5-flash-lite"
     lf_client = get_client() if use_langfuse else None
 
-    # Accumulate all completed results in memory, then sort by sample_id and
-    # write at the end. ThreadPoolExecutor yields futures in completion order,
-    # which is non-deterministic across workers; sorting makes the on-disk
-    # artifacts deterministic and diff-friendly between runs.
-    results: list[tuple[str, dict, dict, dict | None]] = []
+    existing_metrics = _load_jsonl_by_sample_id(metrics_path) if resume_eval else {}
+    existing_trace = _load_jsonl_by_sample_id(trace_path) if resume_eval else {}
+    existing_tax = _load_jsonl_by_sample_id(taxonomy_path) if resume_eval else {}
 
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        all_meps = list(iter_meps(str(out_dir)))
-        if mep_start > 0:
-            print(f"[post-eval] Skipping first {mep_start} MEPs (mep_start={mep_start}, total={len(all_meps)})")
-            all_meps = all_meps[mep_start:]
-        futures = {pool.submit(_eval_mep, mep, config, use_judge, judge_model, lf_client): mep for mep in all_meps}
-        for future in as_completed(futures):
-            mep = futures[future]
-            sid = mep.get("sample", {}).get("sample_id", "?")
-            try:
-                row, trace_row, tax_row = future.result()
-            except Exception as exc:
-                print(f"  [eval] {sid} ERROR: {exc}")
-                continue
-            results.append((sid, row, trace_row, tax_row))
+    results, all_meps = _collect_eval_results(
+        out_dir,
+        config,
+        use_judge,
+        judge_model,
+        lf_client,
+        workers,
+        mep_start,
+        resume_eval,
+        existing_metrics,
+        metrics_path,
+    )
 
-    if not results:
+    allowed = {m.get("sample", {}).get("sample_id") for m in all_meps if m.get("sample", {}).get("sample_id")}
+    merged_metrics, merged_trace, merged_tax = _merge_eval_resume(
+        existing_metrics, existing_trace, existing_tax, results, allowed
+    )
+
+    if not merged_metrics:
         print("[post-eval] No metrics produced.")
         return
 
-    results.sort(key=lambda t: t[0])
-    metrics_list: list[dict] = [row for _, row, _, _ in results]
-    taxonomy_rows = sum(1 for _, _, _, tax in results if tax)
+    ordered_sids = sorted(merged_metrics.keys())
+    metrics_list: list[dict] = [merged_metrics[sid] for sid in ordered_sids]
+    taxonomy_rows = len(merged_tax)
 
     with (
         open(metrics_path, "w") as f_met,
         open(trace_path, "w") as f_trace,
         open(taxonomy_path, "w") as f_tax,
     ):
-        for _, row, trace_row, tax_row in results:
+        for sid in ordered_sids:
+            row = merged_metrics[sid]
+            trace_row = merged_trace.get(sid) or {"sample_id": sid, "resume_missing_trace": True}
             f_met.write(json.dumps(row) + "\n")
             f_trace.write(json.dumps(trace_row) + "\n")
-            if tax_row:
-                f_tax.write(json.dumps(tax_row) + "\n")
+        for tax_sid in sorted(merged_tax.keys()):
+            f_tax.write(json.dumps(merged_tax[tax_sid]) + "\n")
 
     acc = sum(m.get("answer_accuracy", 0.0) for m in metrics_list) / len(metrics_list)
     print(f"[post-eval] Accuracy {acc:.1%} (n={len(metrics_list)})")
@@ -243,6 +331,14 @@ def main() -> None:
     parser.add_argument("--mep_start", type=int, default=0, help="Skip first N MEPs (default: 0 = process all)")
     parser.add_argument("--post_eval", action="store_true", help="Run post-eval after generation")
     parser.add_argument("--eval_only", action="store_true", help="Skip generation, run post-eval on existing MEPs")
+    parser.add_argument(
+        "--eval_resume",
+        action="store_true",
+        help=(
+            "With --eval_only: load existing metrics JSONL and skip sample_ids already present; "
+            "merge new scores then rewrite metrics, trace, taxonomy, and summary."
+        ),
+    )
     parser.add_argument("--eval_dir", default="output", help="Directory for eval outputs")
     parser.add_argument("--eval_label", default=None, help="Label for eval files (defaults to config_n)")
     parser.add_argument("--env_file", default=".env", help=".env file to load before running")
@@ -276,6 +372,7 @@ def main() -> None:
             workers=args.workers,
             judge_model=args.judge_model,
             mep_start=args.mep_start,
+            resume_eval=args.eval_resume,
         )
 
 

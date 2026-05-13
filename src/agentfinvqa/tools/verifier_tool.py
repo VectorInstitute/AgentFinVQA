@@ -22,6 +22,37 @@ from ..langfuse_integration.tracing import close_span, open_llm_span
 from ..utils.model_compat import openai_temperature
 
 
+def format_ambiguity_block(
+    high_confidence_choices: Optional[List[str]],
+    *,
+    leading_newline: bool = False,
+) -> str:
+    """Render an ambiguity-flag block for the verifier VLM prompt.
+
+    When the vision agent self-rated ≥2 choices as high-confidence on a
+    single-select question, those choices cannot both be correct, and the verifier
+    should re-examine the chart for distinguishing evidence.
+
+    The block is a *meta-signal*: it tells the verifier WHICH choices are in conflict
+    without surfacing vision's full per-choice confidence dict (which would risk
+    anchoring the verifier on vision's self-assessment).
+    """
+    if not high_confidence_choices or len(high_confidence_choices) < 2:
+        return ""
+    labels = [str(c).strip() for c in high_confidence_choices if str(c).strip()]
+    if len(labels) < 2:
+        return ""
+    body = (
+        f"⚠ VISION AMBIGUITY FLAG: the vision agent rated multiple choices as "
+        f"high-confidence (≥0.95): {', '.join(labels)}. These cannot all be correct on a "
+        f"single-select question. Independently examine the chart and any caption / "
+        f"source-sentence evidence above to identify the distinguishing fact, then "
+        f"choose the single best-supported option. Do NOT default to the draft answer "
+        f"without verifying the distinguishing evidence.\n"
+    )
+    return f"\n{body}" if leading_newline else body
+
+
 def format_source_sentences_block(
     related_sentences: Optional[Any],
     *,
@@ -52,13 +83,44 @@ def format_source_sentences_block(
     return f"\n{body}" if leading_newline else body
 
 
+def choice_analysis_ambiguity_labels(
+    choice_analysis: Optional[dict],
+    *,
+    threshold: float = 0.95,
+    multi_select: bool = False,
+    has_mcq_choices: bool = False,
+) -> list[str]:
+    """Return labels for choices vision self-rated above ``threshold``.
+
+    When at least two labels qualify, a single-select MCQ cannot have two correct
+    answers, so the verifier should re-examine the chart.
+
+    Returns ``[]`` for multi-select or when there are no MCQ choices.
+    """
+    if multi_select or not has_mcq_choices or not choice_analysis:
+        return []
+    high: list[str] = []
+    for label, entry in choice_analysis.items():
+        if not isinstance(entry, dict):
+            continue
+        try:
+            conf = float(entry.get("confidence", 0.0))
+        except (TypeError, ValueError):
+            continue
+        if conf >= threshold:
+            lab = str(label).strip()
+            if lab:
+                high.append(lab)
+    return high if len(high) >= 2 else []
+
+
 _VERIFIER_PROMPT_SINGLE = """\
 You are a critical chart QA verifier. A vision agent has already attempted to answer
 the question below. Your job: look at the chart image carefully and audit the work.
 
 Question         : {question}
 Question Type    : {question_type}
-{choices_block}{caption_block}{source_sentences_block}
+{choices_block}{caption_block}{source_sentences_block}{ambiguity_block}
 Inspection plan the agent was supposed to follow:
 {plan_steps}
 
@@ -96,7 +158,7 @@ You are a critical chart QA verifier. This is a MULTI-SELECT question — multip
 
 Question         : {question}
 Question Type    : {question_type}
-{choices_block}{caption_block}{source_sentences_block}
+{choices_block}{caption_block}{source_sentences_block}{ambiguity_block}
 Inspection plan the agent was supposed to follow:
 {plan_steps}
 
@@ -146,6 +208,14 @@ class VerifierInput(BaseModel):
             "cross-check the draft answer's facts against this text before confirming."
         ),
     )
+    high_confidence_choices: Optional[List[str]] = Field(
+        default=None,
+        description=(
+            "When vision's choice_analysis shows ≥2 options at very high self-confidence on a "
+            "single-select MCQ, pass those labels (e.g. ['Choice A', 'Choice C']) so the verifier "
+            "gets an ambiguity flag — not the full choice_analysis dict."
+        ),
+    )
     multi_select: bool = Field(default=False, description="True when multiple choices can be correct simultaneously")
 
 
@@ -184,6 +254,7 @@ class VerifierTool(BaseTool):
         choices: Optional[List[str]] = None,
         caption: Optional[str] = None,
         related_sentences: Optional[List[str]] = None,
+        high_confidence_choices: Optional[List[str]] = None,
         multi_select: bool = False,
     ) -> str:
         start_ts = datetime.now(timezone.utc).isoformat()
@@ -212,6 +283,7 @@ class VerifierTool(BaseTool):
         else:
             caption_block = ""
         source_sentences_block = format_source_sentences_block(related_sentences)
+        ambiguity_block = format_ambiguity_block(high_confidence_choices)
         template = _VERIFIER_PROMPT_MULTI if multi_select else _VERIFIER_PROMPT_SINGLE
         prompt = template.format(
             question=question,
@@ -219,6 +291,7 @@ class VerifierTool(BaseTool):
             choices_block=choices_block,
             caption_block=caption_block,
             source_sentences_block=source_sentences_block,
+            ambiguity_block=ambiguity_block,
             plan_steps=steps_text,
             draft_answer=draft_answer,
             draft_explanation=draft_explanation,

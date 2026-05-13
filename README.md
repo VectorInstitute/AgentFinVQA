@@ -79,7 +79,7 @@ Input Sample (question, chart image, expected answer)
 
 ## Results
 
-### FinMME (250-sample train slice; v8 scale-up to 1,250)
+### FinMME (250-sample train slice; v8 / v9 / v10 scale-up to 1,250)
 
 | Run | Accuracy | Δ vs baseline | Key change |
 |-----|----------|---------------|------------|
@@ -91,12 +91,14 @@ Input Sample (question, chart image, expected answer)
 | `fixes_v5_multiselect` | **69.4%** | +21.4 pp | Full multi-select MCQ support |
 | `fixes_v7_g3flash_conf_gate` | **69.6%** | +21.6 pp | Confidence gate fix, fresh g3flash run |
 | `fixes_v8_g3flash_color_area` | **71.2%** *(n = 1,250)* | +23.2 pp | Color-area OpenCV pre-hint; see `results.md` §8b |
+| `fixes_v9_g3flash_related_sents` | **71.3%** *(n = 1,250)* | +23.3 pp | Verifier + `related_sentences` + caption cross-check; **~2.4× tighter latency tail** vs v8 (p95 87 s vs 209 s) |
+| `fixes_v10_g3flash_choice_conflict` | **71.1%** *(n = 1,250)* | +23.1 pp | v9 + high-confidence **choice-conflict** flag for verifier |
 
 **vs. FinMME paper (Table 3, Gemini Flash 2.0 = 51.85%):** our best **250-ID** ladder run achieves **+17.8 pp** (v7 mean `answer_accuracy` vs paper headline — metric families differ).
 
 **Fair same-model baseline (Gemini-3 Flash Preview structured zero-shot vs agent):**
 
-- **Primary (matched n = 1,250 train IDs):** zero-shot mean `answer_accuracy` **63.56%** vs agent **`fixes_v8_g3flash_color_area`** **71.24%** → **+7.68 pp** (exact-accuracy gap **+8.72 pp**; McNemar **p ≪ 0.001**). Full zero-shot train file: **11,099** rows — always join on `sample_id` before comparing.
+- **Primary (matched n = 1,250 train IDs):** zero-shot mean `answer_accuracy` **63.56%** vs agents — **v8** **71.24%** (**+7.68 pp**, exact **+8.72 pp**, McNemar χ² = 68.21, p ≈ 1.1×10⁻¹⁶); **v9** **71.28%** (**+7.72 pp**, exact **+8.16 pp**, χ² = 61.45, p ≈ 4.5×10⁻¹⁵); **v10** **71.08%** (**+7.52 pp**, exact **+7.84 pp**, χ² = 57.37, p ≈ 3.6×10⁻¹⁴). All three crush zero-shot; pairwise between agents nothing is significant (v9 vs v8 p = 0.56; v10 vs v8 p = 0.34; v9 vs v10 p = 0.75). v9's distinctive contribution is **latency-tail tightening**, not extra accuracy. Full zero-shot train file: **11,099** rows — always join on `sample_id` before comparing.
 - **Legacy 250-ID snapshot (strict exact, ablation era):** zero-shot **52.8%** vs agent v7 **62.8%** → **+10.0 pp** — useful historically; see `results.md` §8b for context.
 
 > Note: the initial zero-shot Gemini-3 export had parser-related empty predictions; robust extraction + repair recovered many rows before the full 11k re-run.

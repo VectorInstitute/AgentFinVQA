@@ -15,7 +15,11 @@ from crewai import LLM, Agent, Crew, Task
 
 from ..agents.vision_agent import _is_multi_select
 from ..langfuse_integration.tracing import close_span, open_llm_span
-from ..tools.verifier_tool import VerifierTool, format_source_sentences_block
+from ..tools.verifier_tool import (
+    VerifierTool,
+    choice_analysis_ambiguity_labels,
+    format_source_sentences_block,
+)
 from ..utils.json_strict import parse_strict
 from ..utils.model_compat import openai_temperature
 
@@ -119,6 +123,20 @@ class VerifierAgent:
         ca_confs = [v.get("confidence", 1.0) for v in ca.values() if isinstance(v, dict)]
         vision_min_conf = min(ca_confs) if ca_confs else 1.0
 
+        high_labels = choice_analysis_ambiguity_labels(
+            ca if isinstance(ca, dict) else {},
+            multi_select=is_ms,
+            has_mcq_choices=bool(choices),
+        )
+        ambiguity_task_hint = (
+            f"\n⚠ When calling verifier_tool, pass high_confidence_choices exactly as: "
+            f"{high_labels!r}\n"
+            "  (Vision self-rated ≥0.95 confidence on multiple options; "
+            "single-select implies at most one is correct.)\n"
+            if len(high_labels) >= 2
+            else ""
+        )
+
         steps_text = "\n".join(f"  {i + 1}. {s}" for i, s in enumerate(plan_steps)) or "  (none)"
         choices_text = ("\nMCQ Choices:\n" + "\n".join(f"  - {c}" for c in choices) + "\n") if choices else ""
         caption_text = (
@@ -129,7 +147,7 @@ class VerifierAgent:
             else ""
         )
         source_sentences_text = format_source_sentences_block(related_sentences, leading_newline=True)
-        # Reluctance hint when vision was highly confident (single expression to keep run() compact).
+        # Reluctance hint from min choice confidence (keeps ``run()`` compact).
         reluctance_note = (
             "\n⚠ HIGH-CONFIDENCE VISION: the vision agent reported high confidence (≥0.95) on all choices. "
             "Only REVISE if you can identify a specific, clear factual error with direct visual evidence. "
@@ -154,6 +172,7 @@ class VerifierAgent:
             f"{choices_text}"
             f"{caption_text}"
             f"{source_sentences_text}"
+            f"{ambiguity_task_hint}"
             f"{reluctance_note}"
             f"{multi_select_note}\n"
             f"Inspection plan the agent followed:\n{steps_text}\n\n"
@@ -199,6 +218,8 @@ class VerifierAgent:
                 "  - `caption`: analyst caption if shown above (empty string if none)\n"
                 "  - `related_sentences`: list of source sentences from the 'Source sentences' block above "
                 "(empty list if no such block was shown)\n"
+                "  - `high_confidence_choices`: pass the list from the high_confidence_choices line "
+                "in the task when shown; otherwise pass an empty list `[]`\n"
                 + (
                     "  - `multi_select`: True — this is a multi-select question; answer must contain ALL correct letters.\n"
                     if is_ms
