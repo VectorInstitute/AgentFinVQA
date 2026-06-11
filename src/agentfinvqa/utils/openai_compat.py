@@ -14,7 +14,6 @@ caller (tools + CrewAI agent LLMs). Supports two deployment modes:
 import os
 from typing import Any, Optional, Tuple
 
-from crewai import LLM
 from openai import OpenAI
 
 from .model_compat import openai_temperature
@@ -86,6 +85,8 @@ def build_crewai_llm(
     For local vLLM, prefixes the model with ``openai/`` so LiteLLM uses the
     custom base URL.
     """
+    from crewai import LLM  # noqa: PLC0415
+
     if backend == "openai":
         resolved_key = api_key or os.environ.get("OPENAI_API_KEY", "")
         resolved_base = api_base or os.environ.get("OPENAI_BASE_URL", "") or None
