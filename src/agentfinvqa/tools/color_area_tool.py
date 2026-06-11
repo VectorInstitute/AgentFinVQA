@@ -149,9 +149,7 @@ def color_area_tool(image_path: str, legend_map: list) -> dict:
             "total_pixels_matched": 0,
         }
 
-    breakdown = {
-        label: round(cnt / total_matched * 100, 1) for label, cnt in counts.items()
-    }
+    breakdown = {label: round(cnt / total_matched * 100, 1) for label, cnt in counts.items()}
     # Sort descending by percentage
     breakdown = dict(sorted(breakdown.items(), key=lambda x: x[1], reverse=True))
 

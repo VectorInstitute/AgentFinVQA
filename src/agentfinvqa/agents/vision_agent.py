@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
-from crewai import LLM, Agent, Crew, Task
+from crewai import Agent, Crew, Task
 
 from ..datasets.perceived_sample import PerceivedSample
 from ..langfuse_integration.tracing import close_span, open_llm_span
@@ -16,7 +16,7 @@ from ..mep.schema import MEPColorArea
 from ..tools.color_area_tool import format_color_area_block_for_vision
 from ..tools.vision_qa_tool import VisionQATool
 from ..utils.json_strict import parse_strict
-from ..utils.model_compat import openai_temperature
+from ..utils.openai_compat import build_crewai_llm
 
 
 VISION_PROMPT_PATH = Path(__file__).parent / "prompts" / "vision.txt"
@@ -240,44 +240,6 @@ def build_vision_task_description(
     return rendered
 
 
-def _build_llm(backend: str, model: str, api_key: Optional[str]) -> LLM:
-    """
-    Configure a CrewAI LLM instance based on the chosen provider.
-
-    Parameters
-    ----------
-    backend : {'openai', 'gemini'}
-        The model provider.
-    model : str
-        The specific model identifier (e.g., 'gpt-4o').
-    api_key : str, optional
-        The API key to use. Defaults to provider-specific env variables.
-
-    Returns
-    -------
-    LLM
-        The initialized model interface.
-
-    Raises
-    ------
-    ValueError
-        If an unsupported `backend` is specified.
-    """
-    if backend == "openai":
-        return LLM(
-            model=model,
-            api_key=api_key or os.environ.get("OPENAI_API_KEY", ""),
-            **openai_temperature(model),
-        )
-    if backend == "gemini":
-        return LLM(
-            model=f"gemini/{model}",
-            api_key=api_key or os.environ.get("GEMINI_API_KEY", ""),
-            temperature=0,
-        )
-    raise ValueError(f"Unknown vision agent backend: {backend!r}")
-
-
 class VisionAgent:
     """
     An agent that performs visual analysis using a tool-based architecture.
@@ -296,6 +258,8 @@ class VisionAgent:
         vision_model: str = "gemini-2.5-flash-lite",
         agent_api_key: Optional[str] = None,
         vision_api_key: Optional[str] = None,
+        agent_api_base: Optional[str] = None,
+        vision_api_base: Optional[str] = None,
     ):
         """
         Set up the vision agent with its orchestration and vision backends.
@@ -314,6 +278,11 @@ class VisionAgent:
             API key for the orchestrator.
         vision_api_key : str, optional
             API key for the vision tool.
+        agent_api_base : str, optional
+            OpenAI-compatible base URL for the orchestrator
+            (e.g. vLLM-served Qwen2.5-VL).
+        vision_api_base : str, optional
+            OpenAI-compatible base URL for the vision tool.
         """
         self.agent_backend = agent_backend
         self.agent_model = agent_model
@@ -321,6 +290,8 @@ class VisionAgent:
         self.vision_model = vision_model
         self.agent_api_key = agent_api_key
         self.vision_api_key = vision_api_key
+        self.agent_api_base = agent_api_base
+        self.vision_api_base = vision_api_base
 
     def _build_tool(self, lf_trace: Any = None) -> VisionQATool:
         """
@@ -345,6 +316,7 @@ class VisionAgent:
             backend=self.vision_backend,
             model=self.vision_model,
             api_key=key,
+            api_base=self.vision_api_base or "",
             lf_trace=lf_trace,
         )
 
@@ -395,7 +367,7 @@ class VisionAgent:
             A log of tool interactions during the run.
         """
         tool = self._build_tool(lf_trace=lf_trace)
-        llm = _build_llm(self.agent_backend, self.agent_model, self.agent_api_key)
+        llm = build_crewai_llm(self.agent_backend, self.agent_model, self.agent_api_key, self.agent_api_base)
         task_description = build_vision_task_description(
             sample,
             plan,

@@ -12,7 +12,6 @@ Usage:
 
 import argparse
 import contextlib
-import json
 import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -29,7 +28,6 @@ from ..datasets.chartqapro_loader import load_chartqapro
 from ..datasets.finmme_loader import load_finmme
 from ..datasets.perceived_sample import PerceivedSample
 from ..langfuse_integration.client import get_client
-from ..langfuse_integration.dataset import register_dataset
 from ..langfuse_integration.prompts import push_prompts
 from ..langfuse_integration.tracing import (
     log_trace_scores,
@@ -111,6 +109,53 @@ BACKEND_CONFIGS: dict = {
         "vision_backend": "openai",
         "vision_model": "gpt-4o",
         "judge_backend": "gemini",
+    },
+    # Open-source: Qwen2.5-VL served via a local vLLM OpenAI-compatible endpoint.
+    # vLLM speaks OpenAI's chat-completions dialect, so the "openai" tool/agent
+    # path can be reused verbatim — only `api_base` needs to point at the vLLM
+    # server (default: http://localhost:8000/v1; override at the CLI with
+    # `--api_base` or via the OPENAI_BASE_URL env var). Judge remains Gemini-Lite
+    # for fair-baseline consistency with the gemini_* presets.
+    "qwen_qwen": {
+        "planner_backend": "openai",
+        "planner_model": "Qwen/Qwen2.5-VL-32B-Instruct",
+        "vision_backend": "openai",
+        "vision_model": "Qwen/Qwen2.5-VL-32B-Instruct",
+        "judge_backend": "gemini",
+        "api_base": "http://localhost:8000/v1",
+    },
+    # Smaller Qwen variant for cheaper smoke-tests on a single A100-40G.
+    "qwen_qwen_7b": {
+        "planner_backend": "openai",
+        "planner_model": "Qwen/Qwen2.5-VL-7B-Instruct",
+        "vision_backend": "openai",
+        "vision_model": "Qwen/Qwen2.5-VL-7B-Instruct",
+        "judge_backend": "gemini",
+        "api_base": "http://localhost:8000/v1",
+    },
+    # Qwen3.5 dense 27B — newer generation with stronger chart benchmarks
+    # (CharXiv RQ ~79.5, MMMU 82.3). Requires vLLM nightly (main branch) +
+    # the `--reasoning-parser qwen3 --enable-auto-tool-choice
+    # --tool-call-parser qwen3_coder` flags (auto-applied by
+    # slurm_serve_qwen.slrm when MODEL contains "Qwen3.5"). Thinking mode is
+    # disabled per-request via the `qwen35_extra_body` helper.
+    "qwen35_27b": {
+        "planner_backend": "openai",
+        "planner_model": "Qwen/Qwen3.5-27B",
+        "vision_backend": "openai",
+        "vision_model": "Qwen/Qwen3.5-27B",
+        "judge_backend": "gemini",
+        "api_base": "http://localhost:8000/v1",
+    },
+    # Qwen3.6 dense 27B FP8 — official block-128 FP8 quant (~28 GB weights).
+    # Same vLLM flags as Qwen3.5; thinking disabled via `qwen35_extra_body`.
+    "qwen36_27b_fp8": {
+        "planner_backend": "openai",
+        "planner_model": "Qwen/Qwen3.6-27B-FP8",
+        "vision_backend": "openai",
+        "vision_model": "Qwen/Qwen3.6-27B-FP8",
+        "judge_backend": "gemini",
+        "api_base": "http://localhost:8000/v1",
     },
 }
 
@@ -741,9 +786,22 @@ def main() -> None:  # noqa: PLR0912, PLR0915
         "--resume", action="store_true", help="Skip samples that already have MEP JSONs in the output dir"
     )
     parser.add_argument(
+        "--sample_ids_file",
+        default=None,
+        help="Path to a text file of sample_id lines (e.g. finmme_001250); run only these samples",
+    )
+    parser.add_argument(
         "--ocr_model",
         default=None,
         help="Override OCR model (defaults to vision_model)",
+    )
+    parser.add_argument(
+        "--api_base",
+        default=None,
+        help=(
+            "OpenAI-compatible base URL (e.g. local vLLM serving Qwen2.5-VL). "
+            "Overrides the preset's api_base; falls back to OPENAI_BASE_URL env var."
+        ),
     )
     args = parser.parse_args()
 
@@ -752,6 +810,12 @@ def main() -> None:  # noqa: PLR0912, PLR0915
         config["planner_model"] = args.planner_model
     if args.vision_model:
         config["vision_model"] = args.vision_model
+    if args.api_base is not None:
+        config["api_base"] = args.api_base
+    # Single resolved value used to thread vLLM endpoint into every OpenAI-backed
+    # tool/agent. Empty string is the default ("use api.openai.com"); set on the
+    # `qwen_*` presets to point at the local vLLM server.
+    api_base: str = config.get("api_base", "") or ""
     run_id = str(uuid.uuid4())
     dataset_key = args.dataset.lower()
     ds_cfg = DATASET_CONFIGS[dataset_key]
@@ -778,15 +842,23 @@ def main() -> None:  # noqa: PLR0912, PLR0915
         image_dir=image_dir,
         cache_dir=args.cache_dir,
     )
+    if args.sample_ids_file:
+        allowed = {
+            line.strip()
+            for line in Path(args.sample_ids_file).read_text().splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        }
+        before = len(samples)
+        samples = [s for s in samples if s.sample_id in allowed]
+        missing = allowed - {s.sample_id for s in samples}
+        print(f"Sample ID filter : {len(samples)}/{before} loaded from {args.sample_ids_file}")
+        if missing:
+            print(f"  warning: {len(missing)} ids in file not in split (first 5: {sorted(missing)[:5]})")
+        if not samples:
+            print("No samples left after --sample_ids_file filter; exiting.")
+            return
     if args.resume:
-        existing_ids: set[str] = set()
-        for p in Path(out_dir).glob("*.json"):
-            try:
-                data = json.loads(p.read_text())
-                sid = data.get("sample", {}).get("sample_id") or p.stem
-            except Exception:
-                sid = p.stem
-            existing_ids.add(sid)
+        existing_ids: set[str] = {p.stem for p in Path(out_dir).glob("*.json")}
         before = len(samples)
         samples = [s for s in samples if s.sample_id not in existing_ids]
         skipped = before - len(samples)
@@ -807,24 +879,39 @@ def main() -> None:  # noqa: PLR0912, PLR0915
         lf_client = get_client()
         if lf_client:
             print("Langfuse         : enabled")
-            register_dataset(samples, dataset_name=dataset_name, split=args.split)
             push_prompts()
         else:
             print("Langfuse         : not configured (set LANGFUSE_PUBLIC_KEY + LANGFUSE_SECRET_KEY to enable)")
 
     # Build agents once — run() creates fresh Crew/Tool per call so this is thread-safe
     print("Initialising agents …")
-    planner = PlannerAgent(backend=config["planner_backend"], model=config["planner_model"])
+    # api_base only applies to "openai"-backed stages (vLLM speaks OpenAI dialect);
+    # gemini-backed stages ignore it.
+    planner_api_base = api_base if config["planner_backend"] == "openai" else ""
+    vision_api_base = api_base if config["vision_backend"] == "openai" else ""
+    if api_base:
+        print(f"OpenAI base URL  : {api_base}")
+    planner = PlannerAgent(
+        backend=config["planner_backend"],
+        model=config["planner_model"],
+        api_base=planner_api_base or None,
+    )
     vision_agent = VisionAgent(
         agent_backend=config["planner_backend"],
         agent_model=config["planner_model"],
         vision_backend=config["vision_backend"],
         vision_model=config["vision_model"],
+        agent_api_base=planner_api_base or None,
+        vision_api_base=vision_api_base or None,
     )
     verifier: Optional[VerifierAgent] = None
     if not args.no_verifier:
         verifier_model = args.verifier_model or config["vision_model"]
-        verifier = VerifierAgent(backend=config["vision_backend"], model=verifier_model)
+        verifier = VerifierAgent(
+            backend=config["vision_backend"],
+            model=verifier_model,
+            api_base=vision_api_base or None,
+        )
         print(f"Verifier         : enabled ({config['vision_backend']} / {verifier_model})")
     else:
         print("Verifier         : disabled (--no_verifier)")
@@ -832,7 +919,7 @@ def main() -> None:  # noqa: PLR0912, PLR0915
     ocr: Optional[OcrReaderTool] = None
     if not args.no_ocr:
         ocr_model = args.ocr_model or config["vision_model"]
-        ocr = OcrReaderTool(backend=config["vision_backend"], model=ocr_model)
+        ocr = OcrReaderTool(backend=config["vision_backend"], model=ocr_model, api_base=vision_api_base)
         print(f"OCR pre-reader   : enabled ({config['vision_backend']} / {ocr_model})")
     else:
         print("OCR pre-reader   : disabled (--no_ocr)")
@@ -840,7 +927,7 @@ def main() -> None:  # noqa: PLR0912, PLR0915
     legend_grounder: Optional[LegendGrounderTool] = None
     if not args.no_ocr and not args.no_legend_grounding:
         lg_model = args.ocr_model or config["vision_model"]
-        legend_grounder = LegendGrounderTool(backend=config["vision_backend"], model=lg_model)
+        legend_grounder = LegendGrounderTool(backend=config["vision_backend"], model=lg_model, api_base=vision_api_base)
         print(f"Legend grounder  : enabled ({config['vision_backend']} / {lg_model})")
     else:
         reason = "--no_ocr" if args.no_ocr else "--no_legend_grounding"
@@ -890,9 +977,9 @@ def main() -> None:  # noqa: PLR0912, PLR0915
                 s = future_to_sample[future]
                 try:
                     path = future.result()
-                    print(f"[{done}/{len(samples)}] {s.sample_id} → {path}")
+                    print(f"[{done}/{len(samples)}] {s.sample_id} → {path}", flush=True)
                 except Exception as exc:
-                    print(f"[{done}/{len(samples)}] {s.sample_id} ERROR: {exc}")
+                    print(f"[{done}/{len(samples)}] {s.sample_id} ERROR: {exc}", flush=True)
 
     print(f"\nDone. MEPs written to: {out_dir}")
 

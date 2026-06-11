@@ -121,11 +121,11 @@ def _encode_image(image_path: str) -> tuple[str, str]:
     return b64, mime
 
 
-def _call_openai(model: str, prompt: str, image_path: str) -> tuple[str, float]:
-    from openai import OpenAI  # noqa: PLC0415
+def _call_openai(model: str, prompt: str, image_path: str, api_base: str = "") -> tuple[str, float]:
     from agentfinvqa.utils.model_compat import openai_temperature  # noqa: PLC0415
+    from agentfinvqa.utils.openai_compat import build_openai_client, qwen35_extra_body  # noqa: PLC0415
 
-    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+    client = build_openai_client(api_key=os.environ.get("OPENAI_API_KEY", ""), api_base=api_base)
     b64, mime = _encode_image(image_path)
     t0 = time.time()
     response = client.chat.completions.create(
@@ -140,6 +140,7 @@ def _call_openai(model: str, prompt: str, image_path: str) -> tuple[str, float]:
             }
         ],
         max_completion_tokens=1024,
+        extra_body=qwen35_extra_body(model),  # disables thinking on Qwen3.x; no-op otherwise
         **openai_temperature(model),
     )
     latency = time.time() - t0
@@ -222,6 +223,7 @@ def _run_sample(
     model: str,
     config_name: str,
     prompt_style: str = "structured",
+    api_base: str = "",
 ) -> dict:
     prompt = _build_prompt(sample, prompt_style)
     raw_text = ""
@@ -230,7 +232,7 @@ def _run_sample(
 
     try:
         if backend == "openai":
-            raw_text, latency = _call_openai(model, prompt, sample.image_path)
+            raw_text, latency = _call_openai(model, prompt, sample.image_path, api_base=api_base)
         else:
             raw_text, latency = _call_gemini(model, prompt, sample.image_path)
     except Exception as exc:
@@ -298,11 +300,22 @@ def main() -> None:  # noqa: PLR0915
         choices=["structured", "minimal"],
         help="structured: rules + JSON output (default); minimal: bare question only",
     )
+    parser.add_argument(
+        "--api_base",
+        default="",
+        help=(
+            "OpenAI-compatible base URL (e.g. local vLLM endpoint). When set with "
+            "--backend openai, routes calls to this server instead of api.openai.com. "
+            "Falls back to OPENAI_BASE_URL env var when blank."
+        ),
+    )
     args = parser.parse_args()
 
     ds_cfg = DATASET_CONFIGS[args.dataset]
     image_dir = args.image_dir or ds_cfg["default_image_dir"]
-    model_slug = args.model.replace("-", "_").replace(".", "_")
+    # Slugify the model name for filenames — replace separators that can't appear
+    # in filenames (`/` is the killer for HF org/name pairs like Qwen/Qwen3.6-...).
+    model_slug = args.model.replace("-", "_").replace(".", "_").replace("/", "_")
     config_name = f"zeroshot_{args.prompt_style}_{args.backend}_{model_slug}"
 
     out_dir = Path(args.out)
@@ -340,7 +353,8 @@ def main() -> None:  # noqa: PLR0915
     mode = "a" if args.resume else "w"
     with open(out_file, mode) as f_out, ThreadPoolExecutor(max_workers=args.workers) as pool:
         futures = {
-            pool.submit(_run_sample, s, args.backend, args.model, config_name, args.prompt_style): s for s in todo
+            pool.submit(_run_sample, s, args.backend, args.model, config_name, args.prompt_style, args.api_base): s
+            for s in todo
         }
         for future in as_completed(futures):
             try:

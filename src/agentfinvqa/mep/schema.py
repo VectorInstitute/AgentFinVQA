@@ -139,7 +139,7 @@ class MEPLegendGrounding:
 
 @dataclass
 class MEPColorArea:
-    """Trace of the color-area measurement stage inserted between legend grounding and vision.
+    """Trace of the color-area measurement stage between legend grounding and vision.
 
     Captures whether the stage was triggered, the per-label pixel-area breakdown,
     the dominant label, and confidence/ambiguity flags.

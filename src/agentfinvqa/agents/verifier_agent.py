@@ -11,7 +11,7 @@ pipeline architecture.
 import os
 from typing import Any, Optional, Tuple
 
-from crewai import LLM, Agent, Crew, Task
+from crewai import Agent, Crew, Task
 
 from ..agents.vision_agent import _is_multi_select
 from ..langfuse_integration.tracing import close_span, open_llm_span
@@ -21,26 +21,10 @@ from ..tools.verifier_tool import (
     format_source_sentences_block,
 )
 from ..utils.json_strict import parse_strict
-from ..utils.model_compat import openai_temperature
+from ..utils.openai_compat import build_crewai_llm
 
 
 VERIFIER_REQUIRED_KEYS = ["verdict", "answer", "reasoning"]
-
-
-def _build_llm(backend: str, model: str, api_key: Optional[str]) -> LLM:
-    if backend == "openai":
-        return LLM(
-            model=model,
-            api_key=api_key or os.environ.get("OPENAI_API_KEY", ""),
-            **openai_temperature(model),
-        )
-    if backend == "gemini":
-        return LLM(
-            model=f"gemini/{model}",
-            api_key=api_key or os.environ.get("GEMINI_API_KEY", ""),
-            temperature=0,
-        )
-    raise ValueError(f"Unknown verifier backend: {backend!r}")
 
 
 class VerifierAgent:
@@ -56,10 +40,12 @@ class VerifierAgent:
         backend: str = "gemini",
         model: str = "gemini-2.5-flash-lite",
         api_key: Optional[str] = None,
+        api_base: Optional[str] = None,
     ):
         self.backend = backend
         self.model = model
         self.api_key = api_key
+        self.api_base = api_base
 
     def _build_tool(self, lf_trace: Any = None) -> VerifierTool:
         key = self.api_key or (
@@ -69,6 +55,7 @@ class VerifierAgent:
             backend=self.backend,
             model=self.model,
             api_key=key,
+            api_base=self.api_base or "",
             lf_trace=lf_trace,
         )
 
@@ -182,7 +169,7 @@ class VerifierAgent:
         )
 
         tool = self._build_tool(lf_trace=lf_trace)
-        llm = _build_llm(self.backend, self.model, self.api_key)
+        llm = build_crewai_llm(self.backend, self.model, self.api_key, self.api_base)
 
         verifier_span = open_llm_span(
             lf_trace,

@@ -15,11 +15,12 @@ from typing import Any, List, Optional, Type
 
 from crewai.tools import BaseTool
 from google import genai
-from openai import OpenAI
+from openai import OpenAI  # noqa: F401 — re-exported for backwards-compat / type hints
 from pydantic import BaseModel, Field, PrivateAttr
 
 from ..langfuse_integration.tracing import close_span, open_llm_span
 from ..utils.model_compat import openai_temperature
+from ..utils.openai_compat import build_openai_client, qwen35_extra_body
 
 
 class VisionQAInput(BaseModel):
@@ -50,6 +51,10 @@ class VisionQATool(BaseTool):
     backend: str = "gemini"  # "openai" | "gemini"
     model: str = "gemini-2.5-flash-lite"
     api_key: str = ""
+    # Optional OpenAI-compatible endpoint (e.g. local vLLM serving Qwen2.5-VL).
+    # When set together with backend="openai", the OpenAI client is pointed here
+    # instead of api.openai.com. Falls back to OPENAI_BASE_URL env var.
+    api_base: str = ""
     lf_trace: Optional[Any] = None  # Langfuse Trace object for span creation
 
     # Private mutable trace storage (not a Pydantic field)
@@ -310,7 +315,7 @@ class VisionQATool(BaseTool):
         provider_meta : dict
             Metadata including usage and request ID.
         """
-        client = OpenAI(api_key=self.api_key or os.environ.get("OPENAI_API_KEY", ""))
+        client = build_openai_client(self.api_key, self.api_base)
         prompt = self._build_prompt(question, plan_steps, choices, context, multi_select)
         b64, mime = self._encode_image(image_path)
 
@@ -329,6 +334,7 @@ class VisionQATool(BaseTool):
                 }
             ],
             max_completion_tokens=2048,
+            extra_body=qwen35_extra_body(self.model),  # disables thinking on Qwen3.5 only
             **openai_temperature(self.model),
         )
 

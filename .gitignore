@@ -52,3 +52,4 @@ logs/
 
 # Editor copies
 *copy*.ipynb
+vllm_endpoint.txt
