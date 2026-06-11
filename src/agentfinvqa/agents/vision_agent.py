@@ -8,8 +8,6 @@ import os
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
-from crewai import Agent, Crew, Task
-
 from ..datasets.perceived_sample import PerceivedSample
 from ..langfuse_integration.tracing import close_span, open_llm_span
 from ..mep.schema import MEPColorArea
@@ -366,6 +364,8 @@ class VisionAgent:
         tool_traces : list of dict
             A log of tool interactions during the run.
         """
+        from crewai import Agent, Crew, Task  # noqa: PLC0415
+
         tool = self._build_tool(lf_trace=lf_trace)
         llm = build_crewai_llm(self.agent_backend, self.agent_model, self.agent_api_key, self.agent_api_base)
         task_description = build_vision_task_description(
