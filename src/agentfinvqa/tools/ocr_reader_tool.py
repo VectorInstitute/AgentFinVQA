@@ -13,7 +13,11 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Optional, Type
 
-from crewai.tools import BaseTool
+
+try:
+    from crewai.tools import BaseTool
+except ImportError:
+    from pydantic import BaseModel as BaseTool  # type: ignore[assignment]
 from google import genai
 from openai import OpenAI  # noqa: F401 — re-exported for backwards-compat / type hints
 from pydantic import BaseModel, Field, PrivateAttr
