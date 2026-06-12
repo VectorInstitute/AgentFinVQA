@@ -11,8 +11,6 @@ pipeline architecture.
 import os
 from typing import Any, Optional, Tuple
 
-from crewai import Agent, Crew, Task
-
 from ..agents.vision_agent import _is_multi_select
 from ..langfuse_integration.tracing import close_span, open_llm_span
 from ..tools.verifier_tool import (
@@ -167,6 +165,8 @@ class VerifierAgent:
             f"Vision agent's draft explanation: {draft_explanation}\n\n"
             f"Call verifier_tool ONCE with all these details and return its JSON output exactly."
         )
+
+        from crewai import Agent, Crew, Task  # noqa: PLC0415
 
         tool = self._build_tool(lf_trace=lf_trace)
         llm = build_crewai_llm(self.backend, self.model, self.api_key, self.api_base)

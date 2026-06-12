@@ -7,8 +7,6 @@ that the VisionAgent will follow.
 from pathlib import Path
 from typing import Any, Optional, Tuple
 
-from crewai import Agent, Crew, Task
-
 from ..datasets.perceived_sample import PerceivedSample
 from ..langfuse_integration.tracing import close_span, open_llm_span
 from ..utils.json_strict import parse_strict
@@ -134,6 +132,8 @@ class PlannerAgent:
         raw_text : str
             The raw response from the LLM.
         """
+        from crewai import Agent, Crew, Task  # noqa: PLC0415
+
         prompt = build_planner_prompt(sample)
 
         span = open_llm_span(
