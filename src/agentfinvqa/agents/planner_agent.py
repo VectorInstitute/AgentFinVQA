@@ -4,15 +4,13 @@ The planner never sees the image. It creates a 2-4 step chart-reading procedure
 that the VisionAgent will follow.
 """
 
-import os
 from pathlib import Path
 from typing import Any, Optional, Tuple
-
-from crewai import LLM, Agent, Crew, Task
 
 from ..datasets.perceived_sample import PerceivedSample
 from ..langfuse_integration.tracing import close_span, open_llm_span
 from ..utils.json_strict import parse_strict
+from ..utils.openai_compat import build_crewai_llm
 
 
 PLANNER_PROMPT_PATH = Path(__file__).parent / "prompts" / "planner.txt"
@@ -73,39 +71,6 @@ def build_planner_prompt(sample: PerceivedSample) -> str:
     )
 
 
-def _build_llm(backend: str, model: str, api_key: Optional[str]) -> LLM:
-    """
-    Configure the model interface for the planner.
-
-    Parameters
-    ----------
-    backend : {'openai', 'gemini'}
-        The language model provider.
-    model : str
-        The specific model name.
-    api_key : str, optional
-        Key for accessing the model.
-
-    Returns
-    -------
-    LLM
-        The initialized model controller.
-    """
-    if backend == "openai":
-        return LLM(
-            model=model,
-            api_key=api_key or os.environ.get("OPENAI_API_KEY", ""),
-            temperature=0,
-        )
-    if backend == "gemini":
-        return LLM(
-            model=f"gemini/{model}",
-            api_key=api_key or os.environ.get("GEMINI_API_KEY", ""),
-            temperature=0,
-        )
-    raise ValueError(f"Unknown planner backend: {backend!r}")
-
-
 class PlannerAgent:
     """
     An agent responsible for deriving a logical inspection strategy.
@@ -119,6 +84,7 @@ class PlannerAgent:
         backend: str = "gemini",
         model: str = "gemini-2.5-flash-lite",
         api_key: Optional[str] = None,
+        api_base: Optional[str] = None,
     ):
         """
         Initialize the planner with the desired backend and model.
@@ -131,11 +97,15 @@ class PlannerAgent:
             The model name.
         api_key : str, optional
             API key for the provider.
+        api_base : str, optional
+            OpenAI-compatible base URL (e.g. local vLLM serving Qwen2.5-VL).
+            Only honoured when ``backend == "openai"``.
         """
         self.backend = backend
         self.model = model
         self.api_key = api_key
-        self._llm = _build_llm(backend, model, api_key)
+        self.api_base = api_base
+        self._llm = build_crewai_llm(backend, model, api_key, api_base)
 
     def run(self, sample: PerceivedSample, lf_trace: Any = None) -> Tuple[str, dict, bool, str]:
         """
@@ -162,6 +132,8 @@ class PlannerAgent:
         raw_text : str
             The raw response from the LLM.
         """
+        from crewai import Agent, Crew, Task  # noqa: PLC0415
+
         prompt = build_planner_prompt(sample)
 
         span = open_llm_span(

@@ -19,7 +19,7 @@ import contextlib
 import json
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional, cast
 
 from dotenv import load_dotenv
 from google import genai
@@ -104,10 +104,12 @@ def _call_gemini_topk(
 ) -> str:
     client = genai.Client(api_key=api_key or os.environ.get("GEMINI_API_KEY", ""))
     data, mime = _encode_image(image_path)
-    resp = client.models.generate_content(
+    image_part = genai.types.Part.from_bytes(data=base64.b64decode(data), mime_type=f"image/{mime}")
+    models_api = cast(Any, client.models)
+    resp = models_api.generate_content(
         model=model,
-        contents=[genai.types.Part.from_bytes(data=base64.b64decode(data), mime_type=f"image/{mime}"), prompt],
-        config=genai.types.GenerateContentConfig(temperature=0.3, max_output_tokens=256),
+        contents=[image_part, prompt],
+        config=genai.types.GenerateContentConfig(temperature=0.3, max_output_tokens=768),
     )
     return resp.text or ""
 

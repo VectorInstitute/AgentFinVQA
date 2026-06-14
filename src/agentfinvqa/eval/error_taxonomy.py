@@ -17,7 +17,7 @@ import contextlib
 import json
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional, cast
 
 from dotenv import load_dotenv
 from google import genai
@@ -120,10 +120,12 @@ def _call_vlm_openai(prompt: str, image_path: str, model: str, api_key: Optional
 def _call_vlm_gemini(prompt: str, image_path: str, model: str, api_key: Optional[str]) -> str:
     client = genai.Client(api_key=api_key or os.environ.get("GEMINI_API_KEY", ""))
     b64, mime = _encode_image(image_path)
-    response = client.models.generate_content(
+    image_part = genai.types.Part.from_bytes(data=b64, mime_type=f"image/{mime}")
+    models_api = cast(Any, client.models)
+    response = models_api.generate_content(
         model=model,
-        contents=[genai.types.Part.from_bytes(data=b64, mime_type=f"image/{mime}"), prompt],
-        config=genai.types.GenerateContentConfig(temperature=0, max_output_tokens=256),
+        contents=[image_part, prompt],
+        config=genai.types.GenerateContentConfig(temperature=0, max_output_tokens=768),
     )
     return response.text or ""
 
@@ -184,8 +186,8 @@ def classify_failure(
                 raise ValueError(f"Unknown backend: {backend!r}")
         # Image missing — use text-only fallback via the same models
         elif backend == "openai":
-            client = OpenAI(api_key=api_key or os.environ.get("OPENAI_API_KEY", ""))
-            resp = client.chat.completions.create(
+            openai_client = OpenAI(api_key=api_key or os.environ.get("OPENAI_API_KEY", ""))
+            resp = openai_client.chat.completions.create(
                 model=model,
                 messages=[
                     {
@@ -198,11 +200,12 @@ def classify_failure(
             )
             raw = resp.choices[0].message.content or ""
         elif backend == "gemini":
-            client = genai.Client(api_key=api_key or os.environ.get("GEMINI_API_KEY", ""))
-            resp = client.models.generate_content(
+            gemini_client = genai.Client(api_key=api_key or os.environ.get("GEMINI_API_KEY", ""))
+            models_api = cast(Any, gemini_client.models)
+            resp = models_api.generate_content(
                 model=model,
                 contents=[prompt + "\n\n(Note: chart image unavailable)"],
-                config=genai.types.GenerateContentConfig(temperature=0, max_output_tokens=256),
+                config=genai.types.GenerateContentConfig(temperature=0, max_output_tokens=768),
             )
             raw = resp.text or ""
         else:

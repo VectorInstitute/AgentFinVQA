@@ -13,12 +13,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, List, Optional, Type
 
-from crewai.tools import BaseTool
+
+try:
+    from crewai.tools import BaseTool
+except ImportError:
+    from pydantic import BaseModel as BaseTool  # type: ignore[assignment]
 from google import genai
-from openai import OpenAI
+from openai import OpenAI  # noqa: F401 — re-exported for backwards-compat / type hints
 from pydantic import BaseModel, Field, PrivateAttr
 
 from ..langfuse_integration.tracing import close_span, open_llm_span
+from ..utils.model_compat import openai_temperature
+from ..utils.openai_compat import build_openai_client, qwen35_extra_body
 
 
 class VisionQAInput(BaseModel):
@@ -29,6 +35,9 @@ class VisionQAInput(BaseModel):
     plan_steps: List[str] = Field(description="Ordered inspection steps from the planner")
     choices: Optional[List[str]] = Field(default=None, description="MCQ answer choices if applicable")
     context: Optional[List[dict]] = Field(default=None, description="Prior conversation turns")
+    multi_select: bool = Field(
+        default=False, description="True when multiple choices can be correct simultaneously (select-all-that-apply)"
+    )
 
 
 class VisionQATool(BaseTool):
@@ -46,6 +55,10 @@ class VisionQATool(BaseTool):
     backend: str = "gemini"  # "openai" | "gemini"
     model: str = "gemini-2.5-flash-lite"
     api_key: str = ""
+    # Optional OpenAI-compatible endpoint (e.g. local vLLM serving Qwen2.5-VL).
+    # When set together with backend="openai", the OpenAI client is pointed here
+    # instead of api.openai.com. Falls back to OPENAI_BASE_URL env var.
+    api_base: str = ""
     lf_trace: Optional[Any] = None  # Langfuse Trace object for span creation
 
     # Private mutable trace storage (not a Pydantic field)
@@ -75,6 +88,7 @@ class VisionQATool(BaseTool):
         plan_steps: List[str],
         choices: Optional[List[str]] = None,
         context: Optional[List[dict]] = None,
+        multi_select: bool = False,
     ) -> str:
         """
         Execute the primary VLM analysis logic.
@@ -116,9 +130,13 @@ class VisionQATool(BaseTool):
         error_str: Optional[str] = None
         try:
             if self.backend == "openai":
-                raw_text, provider_meta = self._call_openai(image_path, question, plan_steps, choices, context)
+                raw_text, provider_meta = self._call_openai(
+                    image_path, question, plan_steps, choices, context, multi_select
+                )
             elif self.backend == "gemini":
-                raw_text, provider_meta = self._call_gemini(image_path, question, plan_steps, choices, context)
+                raw_text, provider_meta = self._call_gemini(
+                    image_path, question, plan_steps, choices, context, multi_select
+                )
             else:
                 raise ValueError(f"Unknown backend: {self.backend!r}")
         except Exception as exc:
@@ -163,6 +181,7 @@ class VisionQATool(BaseTool):
         plan_steps: List[str],
         choices: Optional[List[str]],
         context: Optional[List[dict]],
+        multi_select: bool = False,
     ) -> str:
         """
         Assemble the final prompt from various input components.
@@ -196,9 +215,36 @@ class VisionQATool(BaseTool):
         if choices:
             parts.append(f"Choices: {', '.join(choices)}")
 
-        parts.append("\nInspection plan — follow in order:")
+        parts.append("\nFocus points (use as guidance, apply your own judgment on how to extract):")
         for i, step in enumerate(plan_steps, 1):
             parts.append(f"  {i}. {step}")
+
+        if multi_select:
+            mcq_rule = (
+                "\n- MULTI-SELECT MCQ: evaluate EVERY choice independently against the chart."
+                " Include ALL letters that are supported by visual evidence."
+                " Do NOT stop at the first correct choice — check every option."
+                " Concatenate all correct letters in your answer (e.g. 'ACD')."
+                " If only one is correct, output just that letter."
+            )
+        elif choices:
+            mcq_rule = (
+                "\n- MCQ RULE: UNANSWERABLE is NOT valid when choices are listed — pick the best-supported choice"
+                " even if partially occluded. Note uncertainty in explanation."
+            )
+        else:
+            mcq_rule = (
+                "\n- Only answer UNANSWERABLE if relevant data is genuinely absent from the chart;"
+                " partial occlusion → best reading + note uncertainty"
+            )
+        parts.append(
+            "\nExtraction rules:"
+            "\n- Read ALL axis tick marks and note scale/units before extracting any values"
+            "\n- For stacked, grouped, pie, or multi-series charts: match each legend entry to its color/pattern/position FIRST"
+            "\n- Report exact numeric values (single number, not a range) unless the question explicitly asks for a range"
+            "\n- For multi-part questions (e.g. 'for X and Y'), report each part separately — do not aggregate"
+            + mcq_rule
+        )
 
         parts.append(
             "\nOutput ONLY this JSON (no markdown, no extra text):\n"
@@ -248,6 +294,7 @@ class VisionQATool(BaseTool):
         plan_steps: List[str],
         choices: Optional[List[str]],
         context: Optional[List[dict]],
+        multi_select: bool = False,
     ) -> tuple:
         """
         Interface with the OpenAI Chat Completion API for vision analysis.
@@ -272,8 +319,8 @@ class VisionQATool(BaseTool):
         provider_meta : dict
             Metadata including usage and request ID.
         """
-        client = OpenAI(api_key=self.api_key or os.environ.get("OPENAI_API_KEY", ""))
-        prompt = self._build_prompt(question, plan_steps, choices, context)
+        client = build_openai_client(self.api_key, self.api_base)
+        prompt = self._build_prompt(question, plan_steps, choices, context, multi_select)
         b64, mime = self._encode_image(image_path)
 
         response = client.chat.completions.create(
@@ -290,8 +337,9 @@ class VisionQATool(BaseTool):
                     ],
                 }
             ],
-            max_completion_tokens=1024,
-            temperature=0,
+            max_completion_tokens=2048,
+            extra_body=qwen35_extra_body(self.model),  # disables thinking on Qwen3.5 only
+            **openai_temperature(self.model),
         )
 
         raw_text = response.choices[0].message.content or ""
@@ -313,6 +361,7 @@ class VisionQATool(BaseTool):
         plan_steps: List[str],
         choices: Optional[List[str]],
         context: Optional[List[dict]],
+        multi_select: bool = False,
     ) -> tuple:
         """
         Interface with the Google Generative AI API for vision analysis.
@@ -338,13 +387,17 @@ class VisionQATool(BaseTool):
             Metadata including finish reason.
         """
         client = genai.Client(api_key=self.api_key or os.environ.get("GEMINI_API_KEY", ""))
-        prompt = self._build_prompt(question, plan_steps, choices, context)
+        prompt = self._build_prompt(question, plan_steps, choices, context, multi_select)
         b64, mime = self._encode_image(image_path)
 
         response = client.models.generate_content(
             model=self.model,
             contents=[genai.types.Part.from_bytes(data=b64, mime_type=f"image/{mime}"), prompt],
-            config=genai.types.GenerateContentConfig(temperature=0, max_output_tokens=1024),
+            config=genai.types.GenerateContentConfig(
+                temperature=0,
+                max_output_tokens=2048,
+                thinking_config=genai.types.ThinkingConfig(thinking_budget=512),
+            ),
         )
 
         raw_text = response.text or ""

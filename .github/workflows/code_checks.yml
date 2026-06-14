@@ -35,7 +35,7 @@ jobs:
         uses: astral-sh/setup-uv@v7.6.0
         with:
           # Install a specific version of uv.
-          version: "0.9.11"
+          version: "0.11.15"
           enable-cache: true
 
       - name: "Set up Python"
@@ -58,3 +58,11 @@ jobs:
           ignore-vulns: |
             GHSA-4xh5-x5gv-qwph
             CVE-2026-4539
+            CVE-2026-45829
+            CVE-2025-69872
+            PYSEC-2026-139
+            CVE-2025-3000
+            CVE-2025-3001
+            PYSEC-2025-217
+            CVE-2026-1839
+            PYSEC-2026-161

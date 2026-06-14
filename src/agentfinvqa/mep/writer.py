@@ -7,6 +7,30 @@ from typing import Iterator
 from .schema import MEP
 
 
+def mep_dataset_split_relpath(
+    dataset: str,
+    split: str,
+    *,
+    no_verifier: bool = False,
+    no_ocr: bool = False,
+    run_tag: str | None = None,
+) -> Path:
+    """Path under ``meps/<planner>_<vision>/`` where MEP JSON files are stored.
+
+    Ablation runs use a subdirectory so they do not overwrite full-pipeline outputs:
+      - no_verifier      → <dataset>/no_verifier/<split>
+      - no_ocr           → <dataset>/no_ocr/<split>
+      - run_tag="foo"    → <dataset>/foo/<split>
+    """
+    if no_verifier:
+        return Path(dataset) / "no_verifier" / split
+    if no_ocr:
+        return Path(dataset) / "no_ocr" / split
+    if run_tag:
+        return Path(dataset) / run_tag / split
+    return Path(dataset) / split
+
+
 def write_mep(mep: MEP, out_dir: str) -> str:
     """Serialize MEP to JSON and write to <out_dir>/<sample_id>.json. Returns path."""
     assert mep.sample is not None, "MEP must have a sample before writing"

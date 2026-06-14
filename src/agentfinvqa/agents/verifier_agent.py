@@ -1,179 +1,36 @@
 """VerifierAgent — Pass 2.5: critically reviews the VisionAgent's draft answer.
 
 The verifier sees the chart image AND the draft answer/explanation and decides
-whether to CONFIRM or REVISE the answer. This teaches multi-agent critique patterns.
+whether to CONFIRM or REVISE the answer.
 
-Unlike VisionAgent (which uses CrewAI + tool-use to explore the chart), the
-verifier makes a single direct VLM call — showing that multi-agent critique
-does not always require a full orchestration framework.
-
-Key teaching point
-------------------
-Two agents looking at the same chart image can disagree. When the second model
-(the verifier) has explicit access to the first model's reasoning, it can catch
-errors the first model missed — axis misreads, arithmetic mistakes, etc.
+Like VisionAgent, this agent uses CrewAI + a dedicated tool (VerifierTool) so
+that the VLM call is observable, traceable, and consistent with the rest of the
+pipeline architecture.
 """
 
-import base64
 import os
-from pathlib import Path
 from typing import Any, Optional, Tuple
 
-from google import genai
-from openai import OpenAI
-from PIL import Image
-
+from ..agents.vision_agent import _is_multi_select
 from ..langfuse_integration.tracing import close_span, open_llm_span
+from ..tools.verifier_tool import (
+    VerifierTool,
+    choice_analysis_ambiguity_labels,
+    format_source_sentences_block,
+)
 from ..utils.json_strict import parse_strict
+from ..utils.openai_compat import build_crewai_llm
 
 
 VERIFIER_REQUIRED_KEYS = ["verdict", "answer", "reasoning"]
-
-_VERIFIER_PROMPT = """\
-You are a critical chart QA verifier. A vision agent has already attempted to answer
-the question below. Your job: look at the chart image carefully and audit the work.
-
-Question         : {question}
-Question Type    : {question_type}
-
-Inspection plan the agent was supposed to follow:
-{plan_steps}
-
-Vision Agent's Draft Answer     : {draft_answer}
-Vision Agent's Draft Explanation: {draft_explanation}
-
-Examine the chart image. Then decide:
-  CONFIRM — the draft answer is correct (output the same answer unchanged)
-  REVISE  — you can see a clear, specific error; output the corrected answer
-
-Rules:
-- Only REVISE when you are confident you can point to a concrete error in the chart
-- If uncertain, CONFIRM — do not second-guess without visual evidence
-- For MCQ questions: the answer must be one of the stated choices
-- If the answer is truly unanswerable from the chart, say exactly "UNANSWERABLE"
-- Keep answers concise — numbers, short phrases, or single words where appropriate
-
-Output ONLY JSON, no markdown, no extra text:
-{{"verdict": "confirmed" | "revised", "answer": "<final answer>", "reasoning": "<one sentence grounded in what you see in the chart>"}}"""
-
-
-# ---------------------------------------------------------------------------
-# VLM helpers (same pattern as error_taxonomy.py)
-# ---------------------------------------------------------------------------
-
-
-def _encode_image(image_path: str) -> tuple:
-    """
-    Read an image file and convert it to a base64 string.
-
-    Parameters
-    ----------
-    image_path : str
-        The path to the image file on disk.
-
-    Returns
-    -------
-    b64 : str
-        The base64 encoded image string.
-    mime : str
-        The inferred MIME type of the image.
-    """
-    ext = Path(image_path).suffix.lower().lstrip(".")
-    mime = {
-        "jpg": "jpeg",
-        "jpeg": "jpeg",
-        "png": "png",
-        "gif": "gif",
-        "webp": "webp",
-    }.get(ext, "jpeg")
-    with open(image_path, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode("utf-8")
-    return b64, mime
-
-
-def _call_vlm_openai(prompt: str, image_path: str, model: str, api_key: Optional[str]) -> str:
-    """
-    Submit a vision request to the OpenAI API.
-
-    Parameters
-    ----------
-    prompt : str
-        The text instruction for the model.
-    image_path : str
-        Path to the relevant image.
-    model : str
-        The GPT model name.
-    api_key : str, optional
-        API key for authorization.
-
-    Returns
-    -------
-    str
-        The text response from the OpenAI model.
-    """
-    client = OpenAI(api_key=api_key or os.environ.get("OPENAI_API_KEY", ""))
-    b64, mime = _encode_image(image_path)
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/{mime};base64,{b64}"},
-                    },
-                ],
-            }
-        ],
-        max_completion_tokens=256,
-        temperature=0,
-    )
-    return response.choices[0].message.content or ""
-
-
-def _call_vlm_gemini(prompt: str, image_path: str, model: str, api_key: Optional[str]) -> str:
-    """
-    Submit a vision request to the Google Gemini API.
-
-    Parameters
-    ----------
-    prompt : str
-        The text instruction for the model.
-    image_path : str
-        Path to the relevant image.
-    model : str
-        The Gemini model name.
-    api_key : str, optional
-        API key for authorization.
-
-    Returns
-    -------
-    str
-        The text response from the Gemini model.
-    """
-    client = genai.Client(api_key=api_key or os.environ.get("GEMINI_API_KEY", ""))
-    image = Image.open(image_path)
-    response = client.models.generate_content(
-        model=model,
-        contents=[image, prompt],
-        config=genai.types.GenerateContentConfig(temperature=0, max_output_tokens=256),
-    )
-    return response.text or ""
-
-
-# ---------------------------------------------------------------------------
-# VerifierAgent
-# ---------------------------------------------------------------------------
 
 
 class VerifierAgent:
     """
     A validation agent that critiques draft answers against visual evidence.
 
-    Coordinates a critical second look at the chart image to verify the
-    logical grounding of the initial answer proposed by the VisionAgent.
+    Uses CrewAI + VerifierTool to make a single auditing VLM call, consistent
+    with how VisionAgent uses VisionQATool.
     """
 
     def __init__(
@@ -181,22 +38,24 @@ class VerifierAgent:
         backend: str = "gemini",
         model: str = "gemini-2.5-flash-lite",
         api_key: Optional[str] = None,
+        api_base: Optional[str] = None,
     ):
-        """
-        Initialize the verifier with the specified multimodal backend.
-
-        Parameters
-        ----------
-        backend : {'openai', 'gemini'}
-            The provider for the verification model.
-        model : str
-            The model name.
-        api_key : str, optional
-            API key to use for calls.
-        """
         self.backend = backend
         self.model = model
         self.api_key = api_key
+        self.api_base = api_base
+
+    def _build_tool(self, lf_trace: Any = None) -> VerifierTool:
+        key = self.api_key or (
+            os.environ.get("OPENAI_API_KEY", "") if self.backend == "openai" else os.environ.get("GEMINI_API_KEY", "")
+        )
+        return VerifierTool(
+            backend=self.backend,
+            model=self.model,
+            api_key=key,
+            api_base=self.api_base or "",
+            lf_trace=lf_trace,
+        )
 
     def run(
         self,
@@ -204,35 +63,19 @@ class VerifierAgent:
         plan: dict,
         vision_parsed: dict,
         lf_trace: Any = None,
-    ) -> Tuple[str, dict, bool, str]:
+    ) -> Tuple[str, dict, bool, str, list]:
         """
-        Critically audit a draft answer using a single VLM call.
-
-        Parameters
-        ----------
-        sample : PerceivedSample
-            The source data sample.
-        plan : dict
-            The inspection plan used by the previous agent.
-        vision_parsed : dict
-            The draft answer and explanation to audit.
-        langfuse_trace : Any, optional
-            Tracing object for observability.
+        Critically audit a draft answer using a CrewAI agent + VerifierTool.
 
         Returns
         -------
-        prompt : str
-            The verifier prompt rendered for the model.
-        parsed : dict
-            The final audited response containing 'verdict', 'answer', and 'reasoning'.
+        task_description : str
+        parsed : dict  — keys: verdict, answer, reasoning
         parse_error : bool
-            True if the JSON result was malformed.
         raw_text : str
-            The raw string response from the VLM.
+        tool_traces : list of dict
         """
         plan_steps = plan.get("steps", [])
-        steps_text = "\n".join(f"  {i + 1}. {s}" for i, s in enumerate(plan_steps)) or "  (none)"
-
         draft_answer = vision_parsed.get("answer", "(none)")
         draft_explanation = vision_parsed.get("explanation", "(none)")
         question_type = getattr(
@@ -240,63 +83,164 @@ class VerifierAgent:
             "value",
             str(getattr(sample, "question_type", "standard")),
         )
+        image_path = getattr(sample, "image_path", "") or ""
 
-        prompt = _VERIFIER_PROMPT.format(
-            question=sample.question,
-            question_type=question_type,
-            plan_steps=steps_text,
-            draft_answer=draft_answer,
-            draft_explanation=draft_explanation,
+        # Extract MCQ choices: prefer labeled choices, else plain list.
+        choices: list = []
+        meta = getattr(sample, "metadata", {}) or {}
+        labeled = meta.get("choices_labeled") or []
+        if labeled:
+            choices = [f"{item.get('label')}: {item.get('text')}" for item in labeled]
+        elif getattr(sample, "choices", None):
+            choices = list(sample.choices)
+
+        caption = (meta.get("verified_caption") or "").strip()
+        # When the sample's metadata carries analyst-written source sentences in
+        # ``related_sentences``, pass them through to the verifier prompt so it can
+        # cross-check numeric / categorical claims in the draft answer against the
+        # original text grounding. Field is optional — datasets without this signal
+        # leave the block empty.
+        related_sentences = meta.get("related_sentences")
+        is_ms = _is_multi_select(sample)
+
+        # Compute min choice_analysis confidence from vision output
+        ca = vision_parsed.get("choice_analysis") or {}
+        ca_confs = [v.get("confidence", 1.0) for v in ca.values() if isinstance(v, dict)]
+        vision_min_conf = min(ca_confs) if ca_confs else 1.0
+
+        high_labels = choice_analysis_ambiguity_labels(
+            ca if isinstance(ca, dict) else {},
+            multi_select=is_ms,
+            has_mcq_choices=bool(choices),
+        )
+        ambiguity_task_hint = (
+            f"\n⚠ When calling verifier_tool, pass high_confidence_choices exactly as: "
+            f"{high_labels!r}\n"
+            "  (Vision self-rated ≥0.95 confidence on multiple options; "
+            "single-select implies at most one is correct.)\n"
+            if len(high_labels) >= 2
+            else ""
         )
 
-        span = open_llm_span(
+        steps_text = "\n".join(f"  {i + 1}. {s}" for i, s in enumerate(plan_steps)) or "  (none)"
+        choices_text = ("\nMCQ Choices:\n" + "\n".join(f"  - {c}" for c in choices) + "\n") if choices else ""
+        caption_text = (
+            "\nChart context (analyst caption — cross-check the draft answer against this text; "
+            "REVISE if a value or category here clearly contradicts the draft, but do NOT revise "
+            f"on phrasing differences alone):\n  {caption}\n"
+            if caption
+            else ""
+        )
+        source_sentences_text = format_source_sentences_block(related_sentences, leading_newline=True)
+        # Reluctance hint from min choice confidence (keeps ``run()`` compact).
+        reluctance_note = (
+            "\n⚠ HIGH-CONFIDENCE VISION: the vision agent reported high confidence (≥0.95) on all choices. "
+            "Only REVISE if you can identify a specific, clear factual error with direct visual evidence. "
+            "If merely uncertain, set confidence < 0.75 and CONFIRM.\n"
+            if vision_min_conf >= 0.95
+            else "\n⚠ The vision agent was reasonably confident. REVISE only for clear, specific errors.\n"
+            if vision_min_conf >= 0.85
+            else ""
+        )
+
+        multi_select_note = (
+            "\n⚠ MULTI-SELECT: verify EACH choice independently. "
+            "Include ALL correct letters; never reduce to a single letter unless only one is correct.\n"
+            if is_ms
+            else ""
+        )
+        task_description = (
+            f"You are auditing a vision agent's answer to a chart question.\n\n"
+            f"Question         : {sample.question}\n"
+            f"Question Type    : {question_type}\n"
+            f"Image path       : {image_path}\n"
+            f"{choices_text}"
+            f"{caption_text}"
+            f"{source_sentences_text}"
+            f"{ambiguity_task_hint}"
+            f"{reluctance_note}"
+            f"{multi_select_note}\n"
+            f"Inspection plan the agent followed:\n{steps_text}\n\n"
+            f"Vision agent's draft answer     : {draft_answer}\n"
+            f"Vision agent's draft explanation: {draft_explanation}\n\n"
+            f"Call verifier_tool ONCE with all these details and return its JSON output exactly."
+        )
+
+        from crewai import Agent, Crew, Task  # noqa: PLC0415
+
+        tool = self._build_tool(lf_trace=lf_trace)
+        llm = build_crewai_llm(self.backend, self.model, self.api_key, self.api_base)
+
+        verifier_span = open_llm_span(
             lf_trace,
-            name="verifier",
-            input_data={"prompt": prompt, "draft_answer": draft_answer},
+            name="verifier_agent",
+            input_data={"task_description": task_description, "draft_answer": draft_answer},
             model=self.model,
             metadata={"backend": self.backend},
         )
 
-        image_path = getattr(sample, "image_path", "") or ""
-        has_image = image_path and Path(image_path).exists()
+        agent = Agent(
+            role="Chart QA Verifier",
+            goal=(
+                "Audit the vision agent's draft answer by calling verifier_tool exactly once "
+                "and returning the JSON result with 'verdict', 'answer', and 'reasoning'."
+            ),
+            backstory=(
+                "You are a precise chart QA auditor. You use verifier_tool to inspect the chart "
+                "image alongside the draft answer, identify any errors, and decide to CONFIRM or REVISE."
+            ),
+            llm=llm,
+            tools=[tool],
+            verbose=False,
+            allow_delegation=False,
+            max_iter=2,
+        )
 
-        try:
-            if has_image:
-                if self.backend == "openai":
-                    raw = _call_vlm_openai(prompt, image_path, self.model, self.api_key)
-                elif self.backend == "gemini":
-                    raw = _call_vlm_gemini(prompt, image_path, self.model, self.api_key)
-                else:
-                    raise ValueError(f"Unknown backend: {self.backend!r}")
-            else:
-                # Image missing — cannot verify visually; default to confirm
-                raw = (
-                    '{"verdict": "confirmed", "answer": "'
-                    + draft_answer.replace('"', '\\"')
-                    + '", "reasoning": "Image unavailable; cannot verify visually."}'
+        task = Task(
+            description=task_description,
+            expected_output=(
+                'JSON object: {"verdict": "confirmed" | "revised", "answer": "...", "reasoning": "..."}\n'
+                "When calling verifier_tool, pass:\n"
+                "  - `choices`: MCQ choices listed above (empty list if none)\n"
+                "  - `caption`: analyst caption if shown above (empty string if none)\n"
+                "  - `related_sentences`: list of source sentences from the 'Source sentences' block above "
+                "(empty list if no such block was shown)\n"
+                "  - `high_confidence_choices`: pass the list from the high_confidence_choices line "
+                "in the task when shown; otherwise pass an empty list `[]`\n"
+                + (
+                    "  - `multi_select`: True — this is a multi-select question; answer must contain ALL correct letters.\n"
+                    if is_ms
+                    else "  - `multi_select`: False\n"
                 )
+            ),
+            agent=agent,
+        )
 
-            parsed, parse_ok = parse_strict(raw, required_keys=VERIFIER_REQUIRED_KEYS)
-            if not parsed:
-                parsed = {
-                    "verdict": "confirmed",
-                    "answer": draft_answer,
-                    "reasoning": f"Parse error — defaulting to confirm. Raw: {raw[:120]}",
-                }
-                parse_ok = False
+        crew = Crew(agents=[agent], tasks=[task], verbose=False)
+        result = crew.kickoff()
 
-            # Normalise verdict to known values
-            if parsed.get("verdict", "").lower() not in ("confirmed", "revised"):
-                parsed["verdict"] = "confirmed"
+        raw_text: str = getattr(result, "raw", None) or str(result)
+        parsed, parse_ok = parse_strict(raw_text, required_keys=VERIFIER_REQUIRED_KEYS)
 
-            close_span(span, output=parsed)
-            return prompt, parsed, not parse_ok, raw
+        tool_traces = tool.pop_traces()
 
-        except Exception as exc:
-            fallback = {
+        if not parsed:
+            parsed = {
                 "verdict": "confirmed",
                 "answer": draft_answer,
-                "reasoning": f"Verifier error: {exc}",
+                "reasoning": f"Parse error — defaulting to confirm. Raw: {raw_text[:120]}",
             }
-            close_span(span, output=fallback, error=str(exc))
-            return prompt, fallback, True, ""
+            parse_ok = False
+
+        if parsed.get("verdict", "").lower() not in ("confirmed", "revised"):
+            parsed["verdict"] = "confirmed"
+
+        # Confidence in [0, 1]. Default 0.75 if missing (passes gate). Gate revisions
+        # only when the model reports low confidence (< 0.75).
+        try:
+            parsed["confidence"] = max(0.0, min(1.0, float(parsed.get("confidence", 0.75))))
+        except (TypeError, ValueError):
+            parsed["confidence"] = 0.75
+
+        close_span(verifier_span, output=parsed)
+        return task_description, parsed, not parse_ok, raw_text, tool_traces

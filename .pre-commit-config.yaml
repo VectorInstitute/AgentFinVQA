@@ -1,23 +1,23 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0  # Use the ref you want to point at
+    rev: v6.0.0
     hooks:
-    - id: trailing-whitespace
-    - id: check-ast
-    - id: check-builtin-literals
-    - id: check-docstring-first
-    - id: check-executables-have-shebangs
-    - id: debug-statements
-    - id: end-of-file-fixer
-    - id: mixed-line-ending
-      args: [--fix=lf]
-    - id: fix-byte-order-marker
-    - id: check-merge-conflict
-    - id: check-symlinks
-    - id: detect-private-key
-    - id: check-yaml
-      args: [--unsafe]
-    - id: check-toml
+      - id: trailing-whitespace
+      - id: check-ast
+      - id: check-builtin-literals
+      - id: check-docstring-first
+      - id: check-executables-have-shebangs
+      - id: debug-statements
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: fix-byte-order-marker
+      - id: check-merge-conflict
+      - id: check-symlinks
+      - id: detect-private-key
+      - id: check-yaml
+        args: [--unsafe]
+      - id: check-toml
 
   - repo: https://github.com/astral-sh/uv-pre-commit
     rev: 0.10.12
@@ -25,52 +25,61 @@ repos:
       - id: uv-lock
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: 'v0.15.7'
+    rev: v0.15.7
     hooks:
-    - id: ruff
-      args: [--fix, --exit-non-zero-on-fix]
-      types_or: [python, jupyter]
-    - id: ruff-format
-      types_or: [python, jupyter]
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        types_or: [python, jupyter]
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.19.1
+  - repo: local
     hooks:
-    - id: mypy
-      entry: python3 -m mypy --config-file pyproject.toml
-      language: system
-      types: [python]
-      exclude: "tests"
+      - id: mypy
+        name: mypy
+        entry: .venv/bin/mypy
+        language: system
+        types: [python]
+        exclude: "tests"
+        args: [--config-file, pyproject.toml]
+        pass_filenames: false
+        always_run: true
 
   - repo: https://github.com/crate-ci/typos
     rev: v1.44.0
     hooks:
       - id: typos
-        args: []
 
   - repo: https://github.com/nbQA-dev/nbQA
     rev: 1.9.1
     hooks:
-    - id: nbqa-ruff
-      args: [--fix, --exit-non-zero-on-fix]
+      - id: nbqa-ruff
+        args: [--fix, --exit-non-zero-on-fix]
 
   - repo: local
     hooks:
-    - id: pytest
-      name: pytest
-      entry: python3 -m pytest -m "not integration_test"
-      language: system
-      pass_filenames: false
-      always_run: true
+      - id: pytest
+        name: pytest
+        # Bare `python` often hits conda/site-packages without project deps (e.g. langfuse, httpx).
+        # `uv run` uses the repo's Python and lockfile; agentic-xai-eval pulls crewai for vision tests.
+        entry: uv run --group agentic-xai-eval python -m pytest -m "not integration_test"
+        language: system
+        pass_filenames: false
+        always_run: true
+
+  # Run after pytest so formatter edits do not confuse later hooks in the same run.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.7
+    hooks:
+      - id: ruff-format
+        types_or: [python, jupyter]
 
 ci:
-    autofix_commit_msg: |
-        [pre-commit.ci] Add auto fixes from pre-commit.com hooks
+  autofix_commit_msg: |
+    [pre-commit.ci] Add auto fixes from pre-commit.com hooks
 
-        for more information, see https://pre-commit.ci
-    autofix_prs: true
-    autoupdate_branch: ''
-    autoupdate_commit_msg: '[pre-commit.ci] pre-commit autoupdate'
-    autoupdate_schedule: weekly
-    skip: [pytest,doctest,mypy]
-    submodules: false
+    for more information, see https://pre-commit.ci
+  autofix_prs: true
+  autoupdate_branch: ''
+  autoupdate_commit_msg: '[pre-commit.ci] pre-commit autoupdate'
+  autoupdate_schedule: weekly
+  skip: [pytest, doctest, mypy]
+  submodules: false

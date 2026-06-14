@@ -11,14 +11,12 @@ Columns:
 """
 
 import re
-import shutil
 from pathlib import Path
 from typing import Any, List, Optional
 
-import numpy as np
 from datasets import load_dataset
-from PIL import Image as PILImage
 
+from .image_utils import save_image_data
 from .perceived_sample import (
     UNANSWERABLE_ANSWERS,
     UNANSWERABLE_TOKEN,
@@ -99,30 +97,7 @@ def _save_image(image: Any, idx: int, img_dir: Path) -> str:
         The absolute filesystem path to the saved PNG.
     """
     path = img_dir / f"chart_{idx:06d}.png"
-    if path.exists():
-        return str(path)
-    try:
-        if isinstance(image, PILImage.Image):
-            image.save(str(path))
-        elif isinstance(image, bytes):
-            with open(str(path), "wb") as f:
-                f.write(image)
-        elif isinstance(image, dict):
-            # HuggingFace wraps as {"bytes": b"...", "path": "..."}
-            raw = image.get("bytes") or image.get("path")
-            if isinstance(raw, bytes):
-                with open(str(path), "wb") as f:
-                    f.write(raw)
-            elif isinstance(raw, str) and raw:
-                shutil.copy(raw, str(path))
-            else:
-                raise ValueError(f"Unknown image dict keys: {list(image.keys())}")
-        else:
-            PILImage.fromarray(np.array(image)).save(str(path))
-        return str(path)
-    except Exception as e:
-        print(f"  Warning: could not save image row {idx}: {e}")
-        return ""
+    return save_image_data(image, path)
 
 
 def _extract_mcq_choices(question: str) -> Optional[List[str]]:

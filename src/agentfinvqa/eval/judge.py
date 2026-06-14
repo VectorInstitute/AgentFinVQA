@@ -10,6 +10,7 @@ from google import genai
 from openai import OpenAI
 
 from ..utils.json_strict import parse_strict
+from ..utils.model_compat import openai_temperature
 
 
 _JUDGE_PROMPT = """\
@@ -89,8 +90,8 @@ def _call_llm(prompt: str, backend: str, model: str, api_key: Optional[str]) -> 
         resp = client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0,
             max_completion_tokens=512,
+            **openai_temperature(model),
         )
         return resp.choices[0].message.content or ""
 

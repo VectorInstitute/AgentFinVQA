@@ -1,9 +1,9 @@
-"""ocr_reader_tool — CrewAI tool that extracts all visible text from a chart image.
+"""legend_grounder_tool — VLM call that maps legend entries to visual properties.
 
-Runs a single VLM call focused purely on text transcription (no reasoning).
-Returns structured JSON with axis labels, legend entries, title, data labels, and
-annotations. The output grounds the downstream VisionAgent in observed chart text,
-separating perception from reasoning.
+Runs a single structured extraction call to bind each legend label to its
+color, line style, and confidence score. The output is injected into the
+vision prompt as locked ground truth, preventing the vision agent from
+visually re-identifying series (which is the root cause of legend confusion).
 """
 
 import base64
@@ -11,7 +11,7 @@ import json
 import os
 import time
 from datetime import datetime, timezone
-from typing import Any, Optional, Type
+from typing import Any, List, Optional, Type
 
 
 try:
@@ -27,58 +27,54 @@ from ..utils.model_compat import openai_temperature
 from ..utils.openai_compat import build_openai_client, qwen35_extra_body
 
 
-_OCR_PROMPT = """\
-Extract ALL visible text from this chart image into structured JSON.
+_LEGEND_GROUNDER_PROMPT_TEMPLATE = """\
+You are analyzing a chart image. The following legend entries have been \
+extracted from this chart:
 
-Transcribe only what is visually present. Do NOT interpret, infer, or reason.
-Do NOT answer any question. Only read and record text.
+{legend_list}
 
-Output ONLY this JSON (no markdown, no extra text):
-{
-  "chart_type": "<bar|line|pie|scatter|table|dashboard|other>",
-  "title": "<chart title, or empty string if absent>",
-  "x_axis": {
-    "label": "<x-axis label, or empty string>",
-    "ticks": ["<tick1>", "<tick2>", "..."]
-  },
-  "y_axis": {
-    "label": "<y-axis label, or empty string>",
-    "ticks": ["<tick1>", "<tick2>", "..."]
-  },
-  "legend": ["<entry1>", "<entry2>", "..."],
-  "data_labels": ["<label1>", "<label2>", "..."],
-  "annotations": ["<note1>", "<note2>", "..."]
-}
+For each legend entry, identify its visual representation in the chart.
+Output ONLY a JSON object with this exact structure — no markdown, \
+no explanation:
+
+{{
+  "legend_map": [
+    {{
+      "label": "<exact legend text>",
+      "color_description": "<e.g. dark blue, orange, dashed grey>",
+      "rgb_approximate": "<e.g. (70, 130, 180) — your best estimate>",
+      "line_style": "<solid|dashed|dotted|bar|area|point>",
+      "confidence": <0.0 to 1.0>
+    }}
+  ]
+}}
 
 Rules:
-- chart_type: the primary chart type you can see
-- title: full title text exactly as written
-- x_axis.ticks / y_axis.ticks: every visible tick label, in order
-- legend: every legend item label, in order
-- data_labels: numeric or text labels attached directly to bars/points/slices
-- annotations: footnotes, source lines, asterisks, or any other floating text
-- Use empty string "" for absent text fields; use [] for absent list fields
-- JSON only — no markdown code fences, no preamble, no trailing text
+- Include every legend entry, even if confidence is low
+- color_description must be a human-readable color name
+- If two entries look visually similar, note that in color_description
+- Do not invent entries not in the legend list
+- Output JSON only
 """
 
 
-class OcrReaderInput(BaseModel):
-    """Input schema for OcrReaderTool."""
+class LegendGrounderInput(BaseModel):
+    """Input schema for LegendGrounderTool."""
 
     image_path: str = Field(description="Absolute or relative path to the chart image file")
+    legend_list: List[str] = Field(description="Legend entry labels extracted by OCR")
 
 
-class OcrReaderTool(BaseTool):
-    """Extract all visible text from a chart image as structured JSON."""
+class LegendGrounderTool(BaseTool):
+    """Map OCR legend labels to visual properties (color, line style)."""
 
-    name: str = "ocr_reader_tool"
+    name: str = "legend_grounder_tool"
     description: str = (
-        "Extract all visible text from a chart image — axis labels, tick values, "
-        "legend entries, title, data labels, and annotations — as structured JSON. "
-        "Use this BEFORE answering any question to ground your response in observed "
-        "text."
+        "Given a chart image and a list of legend entry labels, identify the color, "
+        "line style, and confidence score for each entry. Returns structured JSON "
+        "to ground the vision agent's series identification."
     )
-    args_schema: Type[BaseModel] = OcrReaderInput
+    args_schema: Type[BaseModel] = LegendGrounderInput
 
     backend: str = "gemini"
     model: str = "gemini-2.5-flash-lite"
@@ -92,14 +88,7 @@ class OcrReaderTool(BaseTool):
     _traces: list = PrivateAttr(default_factory=list)
 
     def pop_traces(self) -> list:
-        """
-        Flush and return the tool's execution traces.
-
-        Returns
-        -------
-        list
-            A list of traces collected during tool runs.
-        """
+        """Flush and return the tool's execution traces."""
         traces = list(self._traces)
         self._traces.clear()
         return traces
@@ -108,27 +97,32 @@ class OcrReaderTool(BaseTool):
     # CrewAI entry point
     # ------------------------------------------------------------------
 
-    def _run(self, image_path: str) -> str:
+    def _run(self, image_path: str, legend_list: List[str]) -> str:
         """
-        Execute the OCR extraction logic on a chart image.
+        Make a single VLM call to map each legend entry to its visual properties.
 
         Parameters
         ----------
         image_path : str
-            The path to the image file to read.
+            Path to the chart image.
+        legend_list : list of str
+            Legend entry labels from OCR.
 
         Returns
         -------
         str
-            A structured JSON string containing all transcribed text elements.
+            JSON string with a ``legend_map`` list.
         """
         start_ts = datetime.now(timezone.utc).isoformat()
         t0 = time.time()
 
+        legend_formatted = "\n".join(f"  - {entry}" for entry in legend_list)
+        prompt = _LEGEND_GROUNDER_PROMPT_TEMPLATE.format(legend_list=legend_formatted)
+
         lf_span = open_llm_span(
             self.lf_trace,
-            name="ocr_reader_tool",
-            input_data={"image_path": image_path},
+            name="legend_grounder_tool",
+            input_data={"image_path": image_path, "legend_list": legend_list},
             model=self.model,
             metadata={"backend": self.backend},
         )
@@ -137,24 +131,13 @@ class OcrReaderTool(BaseTool):
         error_str: Optional[str] = None
         try:
             if self.backend == "openai":
-                raw_text, provider_meta = self._call_openai(image_path)
+                raw_text, provider_meta = self._call_openai(image_path, prompt)
             elif self.backend == "gemini":
-                raw_text, provider_meta = self._call_gemini(image_path)
+                raw_text, provider_meta = self._call_gemini(image_path, prompt)
             else:
                 raise ValueError(f"Unknown backend: {self.backend!r}")
         except Exception as exc:
-            raw_text = json.dumps(
-                {
-                    "chart_type": "unknown",
-                    "title": "",
-                    "x_axis": {"label": "", "ticks": []},
-                    "y_axis": {"label": "", "ticks": []},
-                    "legend": [],
-                    "data_labels": [],
-                    "annotations": [],
-                    "error": str(exc),
-                }
-            )
+            raw_text = json.dumps({"legend_map": [], "error": str(exc)})
             provider_meta = {"error": str(exc)}
             error_str = str(exc)
 
@@ -173,7 +156,7 @@ class OcrReaderTool(BaseTool):
 
         self._traces.append(
             {
-                "tool": "ocr_reader_tool",
+                "tool": "legend_grounder_tool",
                 "backend": self.backend,
                 "model": model_used,
                 "start_ts": start_ts,
@@ -186,47 +169,21 @@ class OcrReaderTool(BaseTool):
         return raw_text
 
     # ------------------------------------------------------------------
-    # OpenAI backend
+    # Image encoding
     # ------------------------------------------------------------------
 
     def _encode_image(self, image_path: str) -> tuple:
-        """
-        Convert an image file into a base64 string for API transmission.
-
-        Parameters
-        ----------
-        image_path : str
-            Path to the image.
-
-        Returns
-        -------
-        b64 : str
-            The base64 data.
-        mime : str
-            The MIME type for the image.
-        """
         with open(image_path, "rb") as f:
             data = f.read()
         b64 = base64.b64encode(data).decode("utf-8")
         mime = "png" if image_path.lower().endswith(".png") else "jpeg"
         return b64, mime
 
-    def _call_openai(self, image_path: str) -> tuple:
-        """
-        Invoke OpenAI's VLM to perform structured text extraction.
+    # ------------------------------------------------------------------
+    # OpenAI backend
+    # ------------------------------------------------------------------
 
-        Parameters
-        ----------
-        image_path : str
-            The input image path.
-
-        Returns
-        -------
-        raw_text : str
-            The extracted JSON string.
-        provider_meta : dict
-            API metadata.
-        """
+    def _call_openai(self, image_path: str, prompt: str) -> tuple:
         client = build_openai_client(self.api_key, self.api_base)
         b64, mime = self._encode_image(image_path)
 
@@ -236,7 +193,7 @@ class OcrReaderTool(BaseTool):
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": _OCR_PROMPT},
+                        {"type": "text", "text": prompt},
                         {
                             "type": "image_url",
                             "image_url": {"url": f"data:image/{mime};base64,{b64}"},
@@ -261,28 +218,16 @@ class OcrReaderTool(BaseTool):
     # Gemini backend
     # ------------------------------------------------------------------
 
-    def _call_gemini(self, image_path: str) -> tuple:
-        """
-        Invoke Google's Gemini to perform structured text extraction.
-
-        Parameters
-        ----------
-        image_path : str
-            The input image path.
-
-        Returns
-        -------
-        raw_text : str
-            The extracted JSON string.
-        provider_meta : dict
-            API metadata.
-        """
+    def _call_gemini(self, image_path: str, prompt: str) -> tuple:
         client = genai.Client(api_key=self.api_key or os.environ.get("GEMINI_API_KEY", ""))
-        data, mime = self._encode_image(image_path)
+        b64, mime = self._encode_image(image_path)
         response = client.models.generate_content(
             model=self.model,
-            contents=[genai.types.Part.from_bytes(data=base64.b64decode(data), mime_type=f"image/{mime}"), _OCR_PROMPT],
-            config=genai.types.GenerateContentConfig(temperature=0, max_output_tokens=768),
+            contents=[
+                genai.types.Part.from_bytes(data=base64.b64decode(b64), mime_type=f"image/{mime}"),
+                prompt,
+            ],
+            config=genai.types.GenerateContentConfig(temperature=0, max_output_tokens=512),
         )
 
         raw_text = response.text or ""

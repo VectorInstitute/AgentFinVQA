@@ -13,15 +13,40 @@ dependencies = [
     "ipython>=9.4.0",
     "ipywidgets>=8.1.7",
     "jupyter>=1.1.1",
-    "jupyterlab>=4.4.8",
+    "jupyterlab>=4.5.7",  # PYSEC-2026-164, CVE-2026-42557
     "matplotlib>=3.10.5",
-    "numpy>=1.26,<2.0",
+    "numpy>=2.0",
+    "opencv-python-headless>=4.8.0",
     "openai>=2.8.0",
     "pandas>=2.3.2",
     "python-dotenv>=1.2.2",
     "scikit-learn>=1.5.2",
     "transformers>=4.47.0",
     "langfuse>=4",
+    "google-genai>=1.34.0",
+    "seaborn>=0.13.2",
+    "mypy>=1.19.1",
+    "pytest>=9.0.3",  # CVE-2025-71176
+    "vllm>=0.22.0",   # CVE-2026-22778, -24779, -27893, -34756, -44222, -47155, PYSEC-2026-144
+    "qwen-vl-utils==0.0.14",
+    "litellm>=1.84.0",
+    "json-repair>=0.25.2",
+    # Security lower bounds for transitive dependencies
+    "aiohttp>=3.14.0",       # CVE-2026-34993, CVE-2026-47265
+    "cryptography>=46.0.7",  # PYSEC-2026-35, PYSEC-2026-36
+    "gitpython>=3.1.50",     # CVE-2026-42215, CVE-2026-42284, CVE-2026-44244, GHSA-mv93-w799-cj2w
+    "idna>=3.15",            # CVE-2026-45409
+    "jupyter-server>=2.18.0",  # PYSEC-2026-67/68/69, CVE-2026-40110
+    "mistune>=3.2.1",        # PYSEC-2026-168, CVE-2026-33079
+    "nbconvert>=7.17.1",     # CVE-2026-39377, CVE-2026-39378
+    "notebook>=7.5.6",       # CVE-2026-40171
+    "pillow>=12.2.0",        # PYSEC-2026-165, CVE-2026-40192, -42309, -42310, -42311
+    "pyjwt>=2.13.0",         # PYSEC-2026-175, -177, -178, -179
+    "pymdown-extensions>=10.21.3",  # CVE-2026-46338
+    "python-multipart>=0.0.27",     # CVE-2026-40347, CVE-2026-42561
+    "requests>=2.33.0",      # CVE-2026-25645
+    "urllib3>=2.7.0",        # PYSEC-2026-141, PYSEC-2026-142
+    "xgrammar>=0.1.32",      # CVE-2026-25048
 ]
 
 [build-system]
@@ -40,7 +65,8 @@ dev = [
     "codecov>=2.1.13",
     "mypy>=1.14.1",
     "nbqa>=1.9.1",
-    "pip>=26.0", # Pinning version to address vulnerability CVE-2026-1703
+    "pip>=26.1.2",  # CVE-2026-1703, PYSEC-2026-196, CVE-2026-3219, CVE-2026-6357
+    "uv>=0.11.15",  # GHSA-pjjw-68hj-v9mw, GHSA-4gg8-gxpx-9rph
     "pip-audit>=2.7.3",
     "pre-commit>=4.1.0",
     "pytest>=8.3.4",
@@ -85,6 +111,7 @@ implicit_reexport = false
 strict_equality = true
 extra_checks = true
 mypy_path = "src"
+cache_dir = "/tmp/mypy_cache_agentfinvqa"
 
 [tool.ruff]
 include = ["*.py", "pyproject.toml", "*.ipynb"]
@@ -159,7 +186,7 @@ markers = [
 ]
 
 [[tool.mypy.overrides]]
-module = ["crewai.*", "streamlit", "google.genai", "openinference.*"]
+module = ["crewai.*", "streamlit", "google.genai", "openinference.*", "datasets", "json_repair"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
