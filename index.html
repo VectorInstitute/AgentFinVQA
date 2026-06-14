@@ -1,567 +1,449 @@
-
-<!doctype html>
-<html lang="en" class="no-js">
-  <head>
-    
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width,initial-scale=1">
-      
-      
-      
-      
-      
-        <link rel="next" href="user_guide/">
-      
-      
-        
-      
-      
-      <link rel="icon" href="assets/favicon-48x48.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
-    
-    
-      
-        <title>AgentFinVQA</title>
-      
-    
-    
-      <link rel="stylesheet" href="assets/stylesheets/main.484c7ddc.min.css">
-      
-        
-        <link rel="stylesheet" href="assets/stylesheets/palette.ab4e12ef.min.css">
-      
-      
-
-
-    
-    
-      
-    
-    
-      
-        
-        
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
-        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
-      
-    
-    
-      <link rel="stylesheet" href="assets/_mkdocstrings.css">
-    
-      <link rel="stylesheet" href="stylesheets/extra.css">
-    
-    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
-    
-      
-
-    
-    
-  </head>
-  
-  
-    
-    
-      
-    
-    
-    
-    
-    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="vector" data-md-color-accent="vector-teal">
-  
-    
-    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
-    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
-    <label class="md-overlay" for="__drawer"></label>
-    <div data-md-component="skip">
-      
-        
-        <a href="#agentfinvqa" class="md-skip">
-          Skip to content
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgentFinVQA: A Multi-Agent Framework for Financial Chart VQA</title>
+  <meta name="description" content="AgentFinVQA: A multi-agent evaluation framework for visual question answering on financial charts, using a Plan-Inspect-Verify pipeline with traceable Model Evaluation Packets." />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css" />
+  <script defer src="main.js"></script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "ScholarlyArticle",
+    "headline": "AgentFinVQA: A Multi-Agent Framework for Financial Chart VQA",
+    "description": "A multi-agent evaluation framework for visual question answering on financial charts using a Plan-Inspect-Verify pipeline.",
+    "keywords": ["financial VQA", "chart understanding", "multi-agent AI", "visual question answering", "LLM evaluation", "FinMME"],
+    "publisher": { "@type": "Organization", "name": "Vector Institute" },
+    "url": "https://vectorinstitute.github.io/AgentFinVQA"
+  }
+  </script>
+</head>
+<body>
+  <header class="topbar" id="top">
+    <div class="topbar-inner">
+      <div class="topbar-logos">
+        <a href="https://vectorinstitute.ai/" target="_blank" rel="noreferrer">
+          <img src="assets/VectorLogo_Black.png" alt="Vector Institute" class="logo-img" />
         </a>
-      
-    </div>
-    <div data-md-component="announce">
-      
-    </div>
-    
-    
-      
-
-<header class="md-header" data-md-component="header">
-  <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="." title="AgentFinVQA" class="md-header__button md-logo" aria-label="AgentFinVQA" data-md-component="logo">
-      
-<img src="assets/vector-logo.svg" alt="logo">
-
-    </a>
-    <label class="md-header__button md-icon" for="__drawer">
-      
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
-    </label>
-    <div class="md-header__title" data-md-component="header-title">
-      <div class="md-header__ellipsis">
-        <div class="md-header__topic">
-          <span class="md-ellipsis">
-            AgentFinVQA
-          </span>
-        </div>
-        <div class="md-header__topic" data-md-component="header-topic">
-          <span class="md-ellipsis">
-            
-              Home
-            
-          </span>
-        </div>
+        <a href="https://aixpert-project.eu/" target="_blank" rel="noreferrer">
+          <img src="assets/AIXPERTLogo.png" alt="AIXPERT" class="logo-img" />
+        </a>
       </div>
-    </div>
-    
-      
-        <form class="md-header__option" data-md-component="palette">
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="vector" data-md-color-accent="vector-teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
-    
-      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-    
-    
-    
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="vector-teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
-    
-      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
-      </label>
-    
-  
-</form>
-      
-    
-    
-      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
-    
-    
-    
-      
-      
-        <label class="md-header__button md-icon" for="__search">
-          
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
-        </label>
-        <div class="md-search" data-md-component="search" role="dialog">
-  <label class="md-search__overlay" for="__search"></label>
-  <div class="md-search__inner" role="search">
-    <form class="md-search__form" name="search">
-      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
-      <label class="md-search__icon md-icon" for="__search">
-        
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
-        
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
-      </label>
-      <nav class="md-search__options" aria-label="Search">
-        
-        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
-          
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-        </button>
+      <a class="brand" href="#top" aria-label="AgentFinVQA Home">
+        <span class="brand-mark">↗</span>
+        <span class="brand-name">AgentFinVQA</span>
+      </a>
+      <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <nav class="nav" id="nav" aria-label="Site navigation">
+        <a href="#abstract">Abstract</a>
+        <a href="#method">Method</a>
+        <a href="#dataset">Dataset</a>
+        <a href="#results">Results</a>
+        <a href="#quickstart">Quick Start</a>
+        <a href="#citation">BibTeX</a>
       </nav>
-      
-        <div class="md-search__suggest" data-md-component="search-suggest"></div>
-      
-    </form>
-    <div class="md-search__output">
-      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
-        <div class="md-search-result" data-md-component="search-result">
-          <div class="md-search-result__meta">
-            Initializing search
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="container">
+      <div class="hero-content">
+        <div class="hero-header">
+          <h1 class="title">AgentFinVQA: A Multi-Agent Framework for Financial Chart Visual Question Answering</h1>
+
+          <p class="authors">
+            <a href="https://scholar.google.com/citations?user=aravindnarayanan" target="_blank" rel="noreferrer">Aravind Narayanan</a><sup>1</sup>,
+            <a href="https://scholar.google.com/citations?user=chcz7RMAAAAJ" target="_blank" rel="noreferrer">Shaina Raza</a><sup>1</sup>
+          </p>
+
+          <p class="affiliations">
+            <sup>1</sup>Vector Institute, Canada
+          </p>
+
+          <div class="button-row">
+            <a class="btn btn-primary" href="#" target="_blank" rel="noreferrer">
+              <!-- TODO: replace href with arXiv link -->
+              <i class="ai ai-arxiv btn-icon-fa"></i>
+              arXiv
+            </a>
+            <a class="btn btn-primary" href="https://github.com/VectorInstitute/AgentFinVQA" target="_blank" rel="noreferrer">
+              <i class="fab fa-github btn-icon-fa"></i>
+              Code
+            </a>
+            <a class="btn" href="https://huggingface.co/datasets/luojunyu/FinMME" target="_blank" rel="noreferrer">
+              <i class="fas fa-database btn-icon-fa"></i>
+              FinMME Dataset
+            </a>
+            <a class="btn" href="#citation">
+              <i class="fas fa-quote-left btn-icon-fa"></i>
+              BibTeX
+            </a>
           </div>
-          <ol class="md-search-result__list" role="presentation"></ol>
+
+          <p class="hero-attribution">Evaluated on <a href="https://huggingface.co/datasets/luojunyu/FinMME" target="_blank" rel="noreferrer">FinMME</a> (Luo et al., 2025) — we do not own this dataset.</p>
+        </div>
+
+        <div class="hero-figure">
+          <figure>
+            <img
+              src="assets/Teaser.jpeg"
+              alt="FinMME example: zero-shot selects one GNPA period; AgentFinVQA recovers the full multi-select answer via per-choice verification"
+              class="teaser-img"
+              width="1200"
+              height="675"
+              loading="eager"
+              decoding="async"
+            />
+            <figcaption>
+              <strong>Figure 1.</strong> Agent recovers multi-select answers zero-shot misses. On a FinMME GNPA chart, zero-shot selects a single wrong period (1HFY23, 5.1%), while AgentFinVQA applies a Plan → OCR → Legend → Vision → Verify pipeline, audits each MCQ option against the 4% threshold, and recovers the full answer (1QFY24 + 9MFY24). The full reasoning trace is stored as a Model Evaluation Packet (MEP).
+            </figcaption>
+          </figure>
+        </div>
+
+        <div class="hero-intro">
+          <p class="lead">
+            AgentFinVQA is a multi-agent framework for evaluating vision-language models on financial chart understanding.
+            It decomposes chart QA into an explicit <strong>Plan → Inspect → Verify</strong> loop,
+            producing fully traceable <strong>Model Evaluation Packets (MEPs)</strong> for reproducible,
+            post-hoc analysis across VLM backends.
+          </p>
+
+          <div class="badge-row">
+            <span class="pill">11,099 FinMME samples</span>
+            <span class="pill">Plan → Inspect → Verify</span>
+            <span class="pill">+7.7 pp over zero-shot</span>
+            <span class="pill">Gemini · GPT-4o · Qwen3.5/3.6 (vLLM)</span>
+          </div>
         </div>
       </div>
     </div>
-  </div>
-</div>
-      
-    
-    
-      <div class="md-header__source">
-        <a href="https://github.com/VectorInstitute/AgentFinVQA" title="Go to repository" class="md-source" data-md-component="source">
-  <div class="md-source__icon md-icon">
-    
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-  </div>
-  <div class="md-source__repository">
-    VectorInstitute/AgentFinVQA
-  </div>
-</a>
+  </section>
+
+  <main class="container">
+
+    <section id="abstract" class="section">
+      <h2>Abstract</h2>
+      <div class="abstract-box">
+        <p>
+          Financial chart question answering in regulated settings demands more than accuracy: practitioners
+          must know which answers to trust before acting on them, and many institutions cannot send client
+          data to external model providers. Yet existing chart-QA agents are accuracy-focused and opaque,
+          and most assume proprietary API access; none is both auditable and deployable on-premise.
+        </p>
+        <p>
+          We present <strong>AgentFinVQA</strong>, a multi-agent pipeline that decomposes each query into
+          planning, OCR, legend grounding, visual inspection, and verification, recording every step in a
+          traceable <strong>Model Evaluation Packet (MEP)</strong> per sample. On FinMME, AgentFinVQA
+          improves <strong>+7.68&nbsp;pp</strong> over a model-matched zero-shot baseline with a proprietary
+          backbone (Gemini-3; 71.24% vs.&nbsp;63.56%, McNemar p&nbsp;≈&nbsp;1&nbsp;×&nbsp;10⁻¹⁶), and
+          <strong>+4.84&nbsp;pp</strong> with open-weights Qwen3.6-27B-FP8 served locally on a single A100
+          at roughly one-tenth the cost, so the gains do not depend on a proprietary API.
+        </p>
+        <p>
+          The verifier's verdict also serves as a useful confidence signal (68.2% vs.&nbsp;55.6% exact
+          accuracy on confirmed vs.&nbsp;revised answers), enabling human-in-the-loop review routing.
+          Together these results show that auditable, on-premise financial chart QA is practical and that
+          the open-weights system keeps most of the accuracy gains at a fraction of the cost. We release
+          our code and per-sample MEPs to support reproducible evaluation.
+        </p>
       </div>
-    
-  </nav>
-  
-</header>
-    
-    <div class="md-container" data-md-component="container">
-      
-      
-        
-          
-            
-<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
-  <div class="md-grid">
-    <ul class="md-tabs__list">
-      
-        
-  
-  
-  
-    
-  
-  
-    <li class="md-tabs__item md-tabs__item--active">
-      <a href="." class="md-tabs__link">
-        
-  
-  
-    
-  
-  Home
+    </section>
 
-      </a>
-    </li>
-  
+    <section id="method" class="section">
+      <h2>Method</h2>
+      <p class="section-intro">
+        AgentFinVQA coordinates four specialized components in a structured pipeline.
+        Unlike single-pass VLM approaches, each component has a clearly scoped role,
+        and the entire execution trace is captured for post-hoc explainability.
+      </p>
 
-      
-        
-  
-  
-  
-  
-    <li class="md-tabs__item">
-      <a href="user_guide/" class="md-tabs__link">
-        
-  
-  
-    
-  
-  User Guide
-
-      </a>
-    </li>
-  
-
-      
-        
-  
-  
-  
-  
-    <li class="md-tabs__item">
-      <a href="api/" class="md-tabs__link">
-        
-  
-  
-    
-  
-  API Reference
-
-      </a>
-    </li>
-  
-
-      
-    </ul>
-  </div>
-</nav>
-          
-        
-      
-      <main class="md-main" data-md-component="main">
-        <div class="md-main__inner md-grid">
-          
-            
-              
-              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
-                <div class="md-sidebar__scrollwrap">
-                  <div class="md-sidebar__inner">
-                    
-
-
-  
-
-
-<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
-  <label class="md-nav__title" for="__drawer">
-    <a href="." title="AgentFinVQA" class="md-nav__button md-logo" aria-label="AgentFinVQA" data-md-component="logo">
-      
-<img src="assets/vector-logo.svg" alt="logo">
-
-    </a>
-    AgentFinVQA
-  </label>
-  
-    <div class="md-nav__source">
-      <a href="https://github.com/VectorInstitute/AgentFinVQA" title="Go to repository" class="md-source" data-md-component="source">
-  <div class="md-source__icon md-icon">
-    
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-  </div>
-  <div class="md-source__repository">
-    VectorInstitute/AgentFinVQA
-  </div>
-</a>
-    </div>
-  
-  <ul class="md-nav__list" data-md-scrollfix>
-    
-      
-      
-  
-  
-    
-  
-  
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-      <a href="." class="md-nav__link md-nav__link--active">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Home
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="user_guide/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    User Guide
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="api/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    API Reference
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-  </ul>
-</nav>
-                  </div>
-                </div>
-              </div>
-            
-            
-              
-              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
-                <div class="md-sidebar__scrollwrap">
-                  <div class="md-sidebar__inner">
-                    
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-</nav>
-                  </div>
-                </div>
-              </div>
-            
-          
-          
-            <div class="md-content" data-md-component="content">
-              
-              <article class="md-content__inner md-typeset">
-                
-                  
-
-
-  
-  
-
-
-<h1 id="agentfinvqa">AgentFinVQA<a class="headerlink" href="#agentfinvqa" title="Permanent link">&para;</a></h1>
-<p>Please check out the user guide page for more detailed information on using this project.
-For existing projects, the <a href="user_guide/">user guide</a> can be followed to get started.</p>
-
-
-
-
-
-
-
-
-
-
-
-
-                
-              </article>
-            </div>
-          
-          
-<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+      <div class="pipeline">
+        <div class="pipeline-step">
+          <div class="step-number">1</div>
+          <div class="step-body">
+            <h3>PlannerAgent</h3>
+            <p>Text-only LLM that generates a structured JSON inspection plan — <strong>without seeing the image</strong>.
+            Separates strategic reasoning from visual perception.</p>
+          </div>
         </div>
-        
-          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
-  
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
-  Back to top
-</button>
-        
-      </main>
-      
-        <footer class="md-footer">
-  
-    
-      
-      <nav class="md-footer__inner md-grid" aria-label="Footer" >
-        
-        
-          
-          <a href="user_guide/" class="md-footer__link md-footer__link--next" aria-label="Next: User Guide">
-            <div class="md-footer__title">
-              <span class="md-footer__direction">
-                Next
-              </span>
-              <div class="md-ellipsis">
-                User Guide
-              </div>
-            </div>
-            <div class="md-footer__button md-icon">
-              
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
-            </div>
-          </a>
-        
-      </nav>
-    
-  
-  <div class="md-footer-meta md-typeset">
-    <div class="md-footer-meta__inner md-grid">
-      <div class="md-copyright">
-  <div class="md-footer-vector">
-    <a href="https://vectorinstitute.ai" target="_blank" rel="noopener">
-      <img
-        src="assets/vector-logo.svg"
-        alt="Vector Institute Logo"
-        height="24"
-      />
-    </a>
-  </div>
-   
-</div>
-      
-        
-<div class="md-social">
-  
-    
-    
-    
-    
-    <a href="404.html" target="_blank" rel="noopener" title="" class="md-social__link">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M492.5 69.8c-.2-.3-.4-.6-.8-.7-38.1-17.5-78.4-30-119.7-37.1-.4-.1-.8 0-1.1.1s-.6.4-.8.8c-5.5 9.9-10.5 20.2-14.9 30.6-44.6-6.8-89.9-6.8-134.4 0-4.5-10.5-9.5-20.7-15.1-30.6-.2-.3-.5-.6-.8-.8s-.7-.2-1.1-.2C162.5 39 122.2 51.5 84.1 69c-.3.1-.6.4-.8.7C7.1 183.5-13.8 294.6-3.6 404.2c0 .3.1.5.2.8s.3.4.5.6c44.4 32.9 94 58 146.8 74.2.4.1.8.1 1.1 0s.7-.4.9-.7c11.3-15.4 21.4-31.8 30-48.8.1-.2.2-.5.2-.8s0-.5-.1-.8-.2-.5-.4-.6-.4-.3-.7-.4c-15.8-6.1-31.2-13.4-45.9-21.9-.3-.2-.5-.4-.7-.6s-.3-.6-.3-.9 0-.6.2-.9.3-.5.6-.7c3.1-2.3 6.2-4.7 9.1-7.1.3-.2.6-.4.9-.4s.7 0 1 .1c96.2 43.9 200.4 43.9 295.5 0 .3-.1.7-.2 1-.2s.7.2.9.4c2.9 2.4 6 4.9 9.1 7.2.2.2.4.4.6.7s.2.6.2.9-.1.6-.3.9-.4.5-.6.6c-14.7 8.6-30 15.9-45.9 21.8-.2.1-.5.2-.7.4s-.3.4-.4.7-.1.5-.1.8.1.5.2.8c8.8 17 18.8 33.3 30 48.8.2.3.6.6.9.7s.8.1 1.1 0c52.9-16.2 102.6-41.3 147.1-74.2.2-.2.4-.4.5-.6s.2-.5.2-.8c12.3-126.8-20.5-236.9-86.9-334.5zm-302 267.7c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.4 59.2-52.8 59.2m195.4 0c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.2 59.2-52.8 59.2"/></svg>
-    </a>
-  
-    
-    
-    
-    
-      
-      
-    
-    <a href="https://github.com/VectorInstitute/AgentFinVQA" target="_blank" rel="noopener" title="github.com" class="md-social__link">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
-    </a>
-  
-</div>
-      
+        <div class="pipeline-arrow">↓</div>
+        <div class="pipeline-step">
+          <div class="step-number">2</div>
+          <div class="step-body">
+            <h3>OcrReaderTool</h3>
+            <p>Focused VLM call that transcribes all visible chart text (axes, labels, legend, annotations)
+            into structured JSON, grounding downstream agents in observed text rather than hallucinated values.</p>
+          </div>
+        </div>
+        <div class="pipeline-arrow">↓</div>
+        <div class="pipeline-step">
+          <div class="step-number">3</div>
+          <div class="step-body">
+            <h3>VisionAgent</h3>
+            <p>CrewAI-orchestrated agent that executes the planner's steps using <code>vision_qa_tool</code>
+            to produce a draft answer and explanation.</p>
+          </div>
+        </div>
+        <div class="pipeline-arrow">↓</div>
+        <div class="pipeline-step">
+          <div class="step-number">4</div>
+          <div class="step-body">
+            <h3>VerifierAgent</h3>
+            <p>Second VLM that critically reviews the draft answer against the chart image and issues a
+            <strong>CONFIRM</strong> or <strong>REVISE</strong> verdict with confidence score.</p>
+          </div>
+        </div>
+        <div class="pipeline-arrow">↓</div>
+        <div class="pipeline-step pipeline-step--output">
+          <div class="step-number">✓</div>
+          <div class="step-body">
+            <h3>Model Evaluation Packet (MEP)</h3>
+            <p>Portable JSON artifact capturing the full trace: inspection plan, OCR output, vision reasoning,
+            verifier critique, tool call logs, timestamps, and per-stage errors.
+            Enables reproducible evaluation and model comparison across backends.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box" style="margin-top: 2rem;">
+        <h3 class="h3">Supported Backends</h3>
+        <p>All agents support swappable VLM backends via a unified interface:</p>
+        <ul class="bullets">
+          <li><strong>Gemini</strong> — Google Gemini 3 Flash / 2.5 Flash (default)</li>
+          <li><strong>OpenAI-compatible</strong> — GPT-4o, or any locally-served model via vLLM (e.g. Qwen3.5 / Qwen3.6)</li>
+          <li>Planner and Verifier can use different backends from the VisionAgent</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="dataset" class="section">
+      <h2>Dataset</h2>
+      <div class="two-col">
+        <div>
+          <h3 class="h3">FinMME</h3>
+          <p>
+            AgentFinVQA is evaluated on <strong>FinMME</strong>, a challenging financial multimodal benchmark
+            spanning 18 financial domains and 6 asset classes. Samples are sourced from real-world financial
+            research reports and cover three cognitive levels, comprehensive understanding, fine-grained
+            perception, and analysis &amp; reasoning, validated by 20 expert annotators.
+          </p>
+          <ul class="bullets">
+            <li><strong>10 major chart types</strong>, 21 subtypes (bar, line, pie, candlestick, and more)</li>
+            <li><strong>3 cognitive levels:</strong> comprehensive understanding, fine-grained perception, analysis &amp; reasoning</li>
+            <li><strong>3 knowledge domains:</strong> equity research, macroeconomic research, assets &amp; financial products</li>
+            <!-- <li><strong>FinScore</strong> evaluation with hallucination penalties and multi-dimensional assessment</li> -->
+          </ul>
+        </div>
+        <div class="card">
+          <h3 class="h3">Dataset at a Glance</h3>
+          <div class="grid-2">
+            <div class="stat"><div class="stat-value">11,099</div><div class="stat-label">Total samples</div></div>
+            <div class="stat"><div class="stat-value">4,458</div><div class="stat-label">Unique images</div></div>
+            <div class="stat"><div class="stat-value">18</div><div class="stat-label">Financial domains</div></div>
+            <div class="stat"><div class="stat-value">10</div><div class="stat-label">Chart types</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="results" class="section">
+      <h2>Results</h2>
+      <p class="section-intro">
+        AgentFinVQA consistently outperforms same-model zero-shot baselines across both evaluated backbones on FinMME.
+        With Gemini-3 Flash the agent gains <strong>+7.68 pp mean accuracy</strong>
+        (p&nbsp;≈&nbsp;1.1&nbsp;×&nbsp;10⁻¹⁶); with the locally-served
+        <strong>Qwen3.6-27B-FP8</strong> (vLLM) it gains <strong>+4.84 pp</strong>
+        (p&nbsp;≈&nbsp;3.0&nbsp;×&nbsp;10⁻⁶), demonstrating backend-agnostic improvements.
+      </p>
+
+      <div class="table-wrap" role="region" aria-label="FinMME results" tabindex="0">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>System</th>
+              <th>Backbone</th>
+              <th class="center">Mean<br/><span class="metric-desc">Acc. ↑</span></th>
+              <th class="center">Exact<br/><span class="metric-desc">Acc. ↑</span></th>
+              <th class="center">MCQ Mean<br/><span class="metric-desc">↑</span></th>
+              <th class="center">Std Mean<br/><span class="metric-desc">↑</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Zero-shot</td>
+              <td>Gemini-3 Flash Preview</td>
+              <td class="center">63.56%</td>
+              <td class="center">56.40%</td>
+              <td class="center">64.4%</td>
+              <td class="center">54.0%</td>
+            </tr>
+            <tr class="highlight">
+              <td>AgentFinVQA</td>
+              <td>Gemini-3 Flash Preview</td>
+              <td class="center"><strong>71.24%</strong></td>
+              <td class="center"><strong>65.12%</strong></td>
+              <td class="center"><strong>72.5%</strong></td>
+              <td class="center"><strong>57.0%</strong></td>
+            </tr>
+            <tr class="delta-row">
+              <td>Δ</td>
+              <td></td>
+              <td class="center"><strong>+7.68 pp</strong></td>
+              <td class="center"><strong>+8.72 pp</strong></td>
+              <td class="center"><strong>+8.1 pp</strong></td>
+              <td class="center"><strong>+3.0 pp</strong></td>
+            </tr>
+            <tr style="border-top: 2px solid var(--color-border);">
+              <td>Zero-shot</td>
+              <td>Qwen3.6-27B-FP8</td>
+              <td class="center">61.68%</td>
+              <td class="center">53.52%</td>
+              <td class="center">62.8%</td>
+              <td class="center">49.0%</td>
+            </tr>
+            <tr class="highlight">
+              <td>AgentFinVQA</td>
+              <td>Qwen3.6-27B-FP8</td>
+              <td class="center"><strong>66.52%</strong></td>
+              <td class="center"><strong>60.24%</strong></td>
+              <td class="center"><strong>68.1%</strong></td>
+              <td class="center"><strong>48.0%</strong></td>
+            </tr>
+            <tr class="delta-row">
+              <td>Δ</td>
+              <td></td>
+              <td class="center"><strong>+4.84 pp</strong></td>
+              <td class="center"><strong>+6.72 pp</strong></td>
+              <td class="center"><strong>+5.3 pp</strong></td>
+              <td class="center">−1.0 pp†</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="table-note">
+        FinMME train split (MCQ n&nbsp;=&nbsp;9,247; Standard n&nbsp;=&nbsp;1,862).
+        McNemar p&nbsp;≈&nbsp;1.1&nbsp;×&nbsp;10⁻¹⁶ (Gemini-3) and p&nbsp;≈&nbsp;3.0&nbsp;×&nbsp;10⁻⁶ (Qwen3.6-FP8).
+        †Standard Δ for Qwen is within noise (CI&nbsp;≈&nbsp;±10&nbsp;pp); treat as exploratory.
+      </p>
+
+      <div class="key-findings" style="margin-top: 2rem;">
+        <h3 class="h3">Key Findings</h3>
+        <ul class="bullets">
+          <li><strong>+7.7 pp over same-model zero-shot</strong> on FinMME (1,250 matched samples, statistically significant at p&nbsp;&lt;&nbsp;10⁻¹⁵).</li>
+          <li><strong>Multi-select MCQ</strong> accuracy improved from 30.2% → 53.5% (+23.3 pp) by giving each agent a dedicated multi-select reasoning path.</li>
+          <li><strong>Verifier adds value:</strong> removing the VerifierAgent drops accuracy by ~1.2 pp; revised samples achieve 55.6% exact accuracy vs 68.2% on confirmed samples, confirming the verifier correctly targets harder items.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="quickstart" class="section">
+      <h2>Quick Start</h2>
+
+      <div class="code-section">
+        <h3 class="h3">Installation</h3>
+        <div class="code-card">
+          <button class="code-copy" data-target="code-install" aria-label="Copy installation code">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M4 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V2zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H6zM2 5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1h1v1a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1v1H2z"/>
+            </svg>
+          </button>
+          <pre id="code-install"><code>git clone https://github.com/VectorInstitute/AgentFinVQA.git
+cd AgentFinVQA
+
+# Core dependencies
+uv sync
+
+# Agentic pipeline (CrewAI, Gemini, Streamlit dashboard)
+uv sync --group agentic-xai-eval
+
+source .venv/bin/activate
+cp .env.example .env  # fill in API keys</code></pre>
+        </div>
+      </div>
+
+      <div class="code-section">
+        <h3 class="h3">Run the Pipeline</h3>
+        <div class="code-card">
+          <button class="code-copy" data-target="code-run" aria-label="Copy run code">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M4 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V2zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H6zM2 5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1h1v1a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1v1H2z"/>
+            </svg>
+          </button>
+          <pre id="code-run"><code># Generate MEPs for a dataset split
+uv run --env-file .env -m agentfinvqa.runner.run_generate_meps \
+    --dataset finmme \
+    --split test \
+    --n 200 \
+    --config openai_gemini \
+    --workers 8 \
+    --out meps/
+
+# Evaluate and summarize
+uv run -m agentfinvqa.eval.summarize --mep-dir meps/
+
+# Launch interactive dashboard
+uv run streamlit run src/agentfinvqa/eval/dashboard.py -- --mep-dir meps/</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section id="citation" class="section">
+      <h2>BibTeX</h2>
+      <p class="muted">If you use AgentFinVQA in your research, please cite:</p>
+      <div class="bibtex-section">
+        <button class="btn btn-small btn-copy" id="copyBibtex" type="button" aria-label="Copy BibTeX">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M4 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V2zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H6zM2 5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1h1v1a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1v1H2z"/>
+          </svg>
+          Copy BibTeX
+        </button>
+        <!-- TODO: fill in real citation details -->
+        <pre class="bibtex" id="bibtexBlock"><code>@article{narayanan2026agentfinvqa,
+  title   = {AgentFinVQA: A Multi-Agent Framework for Financial Chart Visual Question Answering},
+  author  = {Narayanan, Aravind and Raza, Shaina},
+  journal = {arXiv preprint arXiv:XXXX.XXXXX},
+  year    = {2026}
+}</code></pre>
+        <p class="copy-status" id="copyStatus" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <section id="acknowledgements" class="section">
+      <h2>Acknowledgements</h2>
+      <p>
+        Resources used in preparing this research were provided, in part, by the Province of Ontario
+        and the Government of Canada through CIFAR, as well as companies sponsoring the Vector Institute
+        (<a href="https://www.vectorinstitute.ai/#partners" target="_blank" rel="noreferrer">vectorinstitute.ai/#partners</a>).
+      </p>
+      <p style="margin-top: 1rem;">
+        This research was funded by the European Union's Horizon Europe research and innovation programme
+        under the <a href="https://aixpert-project.eu/" target="_blank" rel="noreferrer">AIXPERT project</a>
+        (Grant Agreement No.&nbsp;101214389), which aims to develop an agentic, multi-layered, GenAI-powered
+        framework for creating explainable, accountable, and transparent AI systems.
+      </p>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <a href="https://vectorinstitute.ai/" target="_blank" rel="noreferrer">
+        <img src="assets/VectorLogo_Black.png" alt="Vector Institute" class="footer-logo" />
+      </a>
+      <a href="https://aixpert-project.eu/" target="_blank" rel="noreferrer">
+        <img src="assets/AIXPERTLogo.png" alt="AIXPERT" class="footer-logo footer-logo--color" />
+      </a>
+      <p class="footer-text">
+        Built by the AI Engineering team at the <a href="https://vectorinstitute.ai/" target="_blank" rel="noreferrer">Vector Institute</a>
+        &nbsp;·&nbsp; © 2026 &nbsp;·&nbsp;
+        <a href="https://github.com/VectorInstitute/AgentFinVQA" target="_blank" rel="noreferrer">GitHub</a>
+      </p>
     </div>
-  </div>
-</footer>
-      
-    </div>
-    <div class="md-dialog" data-md-component="dialog">
-      <div class="md-dialog__inner md-typeset"></div>
-    </div>
-    
-    
-    
-      
-      
-      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["content.code.annotate", "content.code.copy", "navigation.footer", "navigation.indexes", "navigation.instant", "navigation.tabs", "navigation.top", "search.suggest", "search.highlight", "toc.follow"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
-    
-    
-      <script src="assets/javascripts/bundle.79ae519e.min.js"></script>
-      
-    
-  </body>
+  </footer>
+</body>
 </html>
