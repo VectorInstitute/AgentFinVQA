@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgentFinVQA: A Multi-Agent Framework for Financial Chart VQA</title>
+  <meta name="description" content="AgentFinVQA: A multi-agent evaluation framework for visual question answering on financial charts, using a Plan-Inspect-Verify pipeline with traceable Model Evaluation Packets." />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css" />
+  <script defer src="main.js"></script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "ScholarlyArticle",
+    "headline": "AgentFinVQA: A Multi-Agent Framework for Financial Chart VQA",
+    "description": "A multi-agent evaluation framework for visual question answering on financial charts using a Plan-Inspect-Verify pipeline.",
+    "keywords": ["financial VQA", "chart understanding", "multi-agent AI", "visual question answering", "LLM evaluation", "FinMME"],
+    "publisher": { "@type": "Organization", "name": "Vector Institute" },
+    "url": "https://vectorinstitute.github.io/AgentFinVQA"
+  }
+  </script>
+</head>
+<body>
+  <header class="topbar" id="top">
+    <div class="topbar-inner">
+      <div class="topbar-logos">
+        <a href="https://vectorinstitute.ai/" target="_blank" rel="noreferrer">
+          <img src="assets/VectorLogo_Black.png" alt="Vector Institute" class="logo-img" />
+        </a>
+        <a href="https://aixpert-project.eu/" target="_blank" rel="noreferrer">
+          <img src="assets/AIXPERTLogo.png" alt="AIXPERT" class="logo-img" />
+        </a>
+      </div>
+      <a class="brand" href="#top" aria-label="AgentFinVQA Home">
+        <span class="brand-mark">↗</span>
+        <span class="brand-name">AgentFinVQA</span>
+      </a>
+      <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <nav class="nav" id="nav" aria-label="Site navigation">
+        <a href="#abstract">Abstract</a>
+        <a href="#method">Method</a>
+        <a href="#dataset">Dataset</a>
+        <a href="#results">Results</a>
+        <a href="#quickstart">Quick Start</a>
+        <a href="#citation">BibTeX</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="container">
+      <div class="hero-content">
+        <div class="hero-header">
+          <h1 class="title">AgentFinVQA: A Multi-Agent Framework for Financial Chart Visual Question Answering</h1>
+
+          <p class="authors">
+            <a href="https://scholar.google.com/citations?user=aravindnarayanan" target="_blank" rel="noreferrer">Aravind Narayanan</a><sup>1</sup>,
+            <a href="https://scholar.google.com/citations?user=chcz7RMAAAAJ" target="_blank" rel="noreferrer">Shaina Raza</a><sup>1</sup>
+          </p>
+
+          <p class="affiliations">
+            <sup>1</sup>Vector Institute, Canada
+          </p>
+
+          <div class="button-row">
+            <a class="btn btn-primary" href="#" target="_blank" rel="noreferrer">
+              <!-- TODO: replace href with arXiv link -->
+              <i class="ai ai-arxiv btn-icon-fa"></i>
+              arXiv
+            </a>
+            <a class="btn btn-primary" href="https://github.com/VectorInstitute/AgentFinVQA" target="_blank" rel="noreferrer">
+              <i class="fab fa-github btn-icon-fa"></i>
+              Code
+            </a>
+            <a class="btn" href="https://huggingface.co/datasets/luojunyu/FinMME" target="_blank" rel="noreferrer">
+              <i class="fas fa-database btn-icon-fa"></i>
+              FinMME Dataset
+            </a>
+            <a class="btn" href="#citation">
+              <i class="fas fa-quote-left btn-icon-fa"></i>
+              BibTeX
+            </a>
+          </div>
+
+          <p class="hero-attribution">Evaluated on <a href="https://huggingface.co/datasets/luojunyu/FinMME" target="_blank" rel="noreferrer">FinMME</a> (Luo et al., 2025) — we do not own this dataset.</p>
+        </div>
+
+        <div class="hero-figure">
+          <figure>
+            <img
+              src="assets/Teaser.jpeg"
+              alt="FinMME example: zero-shot selects one GNPA period; AgentFinVQA recovers the full multi-select answer via per-choice verification"
+              class="teaser-img"
+              width="1200"
+              height="675"
+              loading="eager"
+              decoding="async"
+            />
+            <figcaption>
+              <strong>Figure 1.</strong> Agent recovers multi-select answers zero-shot misses. On a FinMME GNPA chart, zero-shot selects a single wrong period (1HFY23, 5.1%), while AgentFinVQA applies a Plan → OCR → Legend → Vision → Verify pipeline, audits each MCQ option against the 4% threshold, and recovers the full answer (1QFY24 + 9MFY24). The full reasoning trace is stored as a Model Evaluation Packet (MEP).
+            </figcaption>
+          </figure>
+        </div>
+
+        <div class="hero-intro">
+          <p class="lead">
+            AgentFinVQA is a multi-agent framework for evaluating vision-language models on financial chart understanding.
+            It decomposes chart QA into an explicit <strong>Plan → Inspect → Verify</strong> loop,
+            producing fully traceable <strong>Model Evaluation Packets (MEPs)</strong> for reproducible,
+            post-hoc analysis across VLM backends.
+          </p>
+
+          <div class="badge-row">
+            <span class="pill">11,099 FinMME samples</span>
+            <span class="pill">Plan → Inspect → Verify</span>
+            <span class="pill">+7.7 pp over zero-shot</span>
+            <span class="pill">Gemini · GPT-4o · Qwen3.5/3.6 (vLLM)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <main class="container">
+
+    <section id="abstract" class="section">
+      <h2>Abstract</h2>
+      <div class="abstract-box">
+        <p>
+          Financial chart question answering in regulated settings demands more than accuracy: practitioners
+          must know which answers to trust before acting on them, and many institutions cannot send client
+          data to external model providers. Yet existing chart-QA agents are accuracy-focused and opaque,
+          and most assume proprietary API access; none is both auditable and deployable on-premise.
+        </p>
+        <p>
+          We present <strong>AgentFinVQA</strong>, a multi-agent pipeline that decomposes each query into
+          planning, OCR, legend grounding, visual inspection, and verification, recording every step in a
+          traceable <strong>Model Evaluation Packet (MEP)</strong> per sample. On FinMME, AgentFinVQA
+          improves <strong>+7.68&nbsp;pp</strong> over a model-matched zero-shot baseline with a proprietary
+          backbone (Gemini-3; 71.24% vs.&nbsp;63.56%, McNemar p&nbsp;≈&nbsp;1&nbsp;×&nbsp;10⁻¹⁶), and
+          <strong>+4.84&nbsp;pp</strong> with open-weights Qwen3.6-27B-FP8 served locally on a single A100
+          at roughly one-tenth the cost, so the gains do not depend on a proprietary API.
+        </p>
+        <p>
+          The verifier's verdict also serves as a useful confidence signal (68.2% vs.&nbsp;55.6% exact
+          accuracy on confirmed vs.&nbsp;revised answers), enabling human-in-the-loop review routing.
+          Together these results show that auditable, on-premise financial chart QA is practical and that
+          the open-weights system keeps most of the accuracy gains at a fraction of the cost. We release
+          our code and per-sample MEPs to support reproducible evaluation.
+        </p>
+      </div>
+    </section>
+
+    <section id="method" class="section">
+      <h2>Method</h2>
+      <p class="section-intro">
+        AgentFinVQA coordinates four specialized components in a structured pipeline.
+        Unlike single-pass VLM approaches, each component has a clearly scoped role,
+        and the entire execution trace is captured for post-hoc explainability.
+      </p>
+
+      <div class="pipeline">
+        <div class="pipeline-step">
+          <div class="step-number">1</div>
+          <div class="step-body">
+            <h3>PlannerAgent</h3>
+            <p>Text-only LLM that generates a structured JSON inspection plan — <strong>without seeing the image</strong>.
+            Separates strategic reasoning from visual perception.</p>
+          </div>
+        </div>
+        <div class="pipeline-arrow">↓</div>
+        <div class="pipeline-step">
+          <div class="step-number">2</div>
+          <div class="step-body">
+            <h3>OcrReaderTool</h3>
+            <p>Focused VLM call that transcribes all visible chart text (axes, labels, legend, annotations)
+            into structured JSON, grounding downstream agents in observed text rather than hallucinated values.</p>
+          </div>
+        </div>
+        <div class="pipeline-arrow">↓</div>
+        <div class="pipeline-step">
+          <div class="step-number">3</div>
+          <div class="step-body">
+            <h3>VisionAgent</h3>
+            <p>CrewAI-orchestrated agent that executes the planner's steps using <code>vision_qa_tool</code>
+            to produce a draft answer and explanation.</p>
+          </div>
+        </div>
+        <div class="pipeline-arrow">↓</div>
+        <div class="pipeline-step">
+          <div class="step-number">4</div>
+          <div class="step-body">
+            <h3>VerifierAgent</h3>
+            <p>Second VLM that critically reviews the draft answer against the chart image and issues a
+            <strong>CONFIRM</strong> or <strong>REVISE</strong> verdict with confidence score.</p>
+          </div>
+        </div>
+        <div class="pipeline-arrow">↓</div>
+        <div class="pipeline-step pipeline-step--output">
+          <div class="step-number">✓</div>
+          <div class="step-body">
+            <h3>Model Evaluation Packet (MEP)</h3>
+            <p>Portable JSON artifact capturing the full trace: inspection plan, OCR output, vision reasoning,
+            verifier critique, tool call logs, timestamps, and per-stage errors.
+            Enables reproducible evaluation and model comparison across backends.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box" style="margin-top: 2rem;">
+        <h3 class="h3">Supported Backends</h3>
+        <p>All agents support swappable VLM backends via a unified interface:</p>
+        <ul class="bullets">
+          <li><strong>Gemini</strong> — Google Gemini 3 Flash / 2.5 Flash (default)</li>
+          <li><strong>OpenAI-compatible</strong> — GPT-4o, or any locally-served model via vLLM (e.g. Qwen3.5 / Qwen3.6)</li>
+          <li>Planner and Verifier can use different backends from the VisionAgent</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="dataset" class="section">
+      <h2>Dataset</h2>
+      <div class="two-col">
+        <div>
+          <h3 class="h3">FinMME</h3>
+          <p>
+            AgentFinVQA is evaluated on <strong>FinMME</strong>, a challenging financial multimodal benchmark
+            spanning 18 financial domains and 6 asset classes. Samples are sourced from real-world financial
+            research reports and cover three cognitive levels, comprehensive understanding, fine-grained
+            perception, and analysis &amp; reasoning, validated by 20 expert annotators.
+          </p>
+          <ul class="bullets">
+            <li><strong>10 major chart types</strong>, 21 subtypes (bar, line, pie, candlestick, and more)</li>
+            <li><strong>3 cognitive levels:</strong> comprehensive understanding, fine-grained perception, analysis &amp; reasoning</li>
+            <li><strong>3 knowledge domains:</strong> equity research, macroeconomic research, assets &amp; financial products</li>
+            <!-- <li><strong>FinScore</strong> evaluation with hallucination penalties and multi-dimensional assessment</li> -->
+          </ul>
+        </div>
+        <div class="card">
+          <h3 class="h3">Dataset at a Glance</h3>
+          <div class="grid-2">
+            <div class="stat"><div class="stat-value">11,099</div><div class="stat-label">Total samples</div></div>
+            <div class="stat"><div class="stat-value">4,458</div><div class="stat-label">Unique images</div></div>
+            <div class="stat"><div class="stat-value">18</div><div class="stat-label">Financial domains</div></div>
+            <div class="stat"><div class="stat-value">10</div><div class="stat-label">Chart types</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="results" class="section">
+      <h2>Results</h2>
+      <p class="section-intro">
+        AgentFinVQA consistently outperforms same-model zero-shot baselines across both evaluated backbones on FinMME.
+        With Gemini-3 Flash the agent gains <strong>+7.68 pp mean accuracy</strong>
+        (p&nbsp;≈&nbsp;1.1&nbsp;×&nbsp;10⁻¹⁶); with the locally-served
+        <strong>Qwen3.6-27B-FP8</strong> (vLLM) it gains <strong>+4.84 pp</strong>
+        (p&nbsp;≈&nbsp;3.0&nbsp;×&nbsp;10⁻⁶), demonstrating backend-agnostic improvements.
+      </p>
+
+      <div class="table-wrap" role="region" aria-label="FinMME results" tabindex="0">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>System</th>
+              <th>Backbone</th>
+              <th class="center">Mean<br/><span class="metric-desc">Acc. ↑</span></th>
+              <th class="center">Exact<br/><span class="metric-desc">Acc. ↑</span></th>
+              <th class="center">MCQ Mean<br/><span class="metric-desc">↑</span></th>
+              <th class="center">Std Mean<br/><span class="metric-desc">↑</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Zero-shot</td>
+              <td>Gemini-3 Flash Preview</td>
+              <td class="center">63.56%</td>
+              <td class="center">56.40%</td>
+              <td class="center">64.4%</td>
+              <td class="center">54.0%</td>
+            </tr>
+            <tr class="highlight">
+              <td>AgentFinVQA</td>
+              <td>Gemini-3 Flash Preview</td>
+              <td class="center"><strong>71.24%</strong></td>
+              <td class="center"><strong>65.12%</strong></td>
+              <td class="center"><strong>72.5%</strong></td>
+              <td class="center"><strong>57.0%</strong></td>
+            </tr>
+            <tr class="delta-row">
+              <td>Δ</td>
+              <td></td>
+              <td class="center"><strong>+7.68 pp</strong></td>
+              <td class="center"><strong>+8.72 pp</strong></td>
+              <td class="center"><strong>+8.1 pp</strong></td>
+              <td class="center"><strong>+3.0 pp</strong></td>
+            </tr>
+            <tr style="border-top: 2px solid var(--color-border);">
+              <td>Zero-shot</td>
+              <td>Qwen3.6-27B-FP8</td>
+              <td class="center">61.68%</td>
+              <td class="center">53.52%</td>
+              <td class="center">62.8%</td>
+              <td class="center">49.0%</td>
+            </tr>
+            <tr class="highlight">
+              <td>AgentFinVQA</td>
+              <td>Qwen3.6-27B-FP8</td>
+              <td class="center"><strong>66.52%</strong></td>
+              <td class="center"><strong>60.24%</strong></td>
+              <td class="center"><strong>68.1%</strong></td>
+              <td class="center"><strong>48.0%</strong></td>
+            </tr>
+            <tr class="delta-row">
+              <td>Δ</td>
+              <td></td>
+              <td class="center"><strong>+4.84 pp</strong></td>
+              <td class="center"><strong>+6.72 pp</strong></td>
+              <td class="center"><strong>+5.3 pp</strong></td>
+              <td class="center">−1.0 pp†</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="table-note">
+        FinMME train split (MCQ n&nbsp;=&nbsp;9,247; Standard n&nbsp;=&nbsp;1,862).
+        McNemar p&nbsp;≈&nbsp;1.1&nbsp;×&nbsp;10⁻¹⁶ (Gemini-3) and p&nbsp;≈&nbsp;3.0&nbsp;×&nbsp;10⁻⁶ (Qwen3.6-FP8).
+        †Standard Δ for Qwen is within noise (CI&nbsp;≈&nbsp;±10&nbsp;pp); treat as exploratory.
+      </p>
+
+      <div class="key-findings" style="margin-top: 2rem;">
+        <h3 class="h3">Key Findings</h3>
+        <ul class="bullets">
+          <li><strong>+7.7 pp over same-model zero-shot</strong> on FinMME (1,250 matched samples, statistically significant at p&nbsp;&lt;&nbsp;10⁻¹⁵).</li>
+          <li><strong>Multi-select MCQ</strong> accuracy improved from 30.2% → 53.5% (+23.3 pp) by giving each agent a dedicated multi-select reasoning path.</li>
+          <li><strong>Verifier adds value:</strong> removing the VerifierAgent drops accuracy by ~1.2 pp; revised samples achieve 55.6% exact accuracy vs 68.2% on confirmed samples, confirming the verifier correctly targets harder items.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="quickstart" class="section">
+      <h2>Quick Start</h2>
+
+      <div class="code-section">
+        <h3 class="h3">Installation</h3>
+        <div class="code-card">
+          <button class="code-copy" data-target="code-install" aria-label="Copy installation code">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M4 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V2zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H6zM2 5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1h1v1a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1v1H2z"/>
+            </svg>
+          </button>
+          <pre id="code-install"><code>git clone https://github.com/VectorInstitute/AgentFinVQA.git
+cd AgentFinVQA
+
+# Core dependencies
+uv sync
+
+# Agentic pipeline (CrewAI, Gemini, Streamlit dashboard)
+uv sync --group agentic-xai-eval
+
+source .venv/bin/activate
+cp .env.example .env  # fill in API keys</code></pre>
+        </div>
+      </div>
+
+      <div class="code-section">
+        <h3 class="h3">Run the Pipeline</h3>
+        <div class="code-card">
+          <button class="code-copy" data-target="code-run" aria-label="Copy run code">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M4 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V2zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H6zM2 5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1h1v1a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1v1H2z"/>
+            </svg>
+          </button>
+          <pre id="code-run"><code># Generate MEPs for a dataset split
+uv run --env-file .env -m agentfinvqa.runner.run_generate_meps \
+    --dataset finmme \
+    --split test \
+    --n 200 \
+    --config openai_gemini \
+    --workers 8 \
+    --out meps/
+
+# Evaluate and summarize
+uv run -m agentfinvqa.eval.summarize --mep-dir meps/
+
+# Launch interactive dashboard
+uv run streamlit run src/agentfinvqa/eval/dashboard.py -- --mep-dir meps/</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section id="citation" class="section">
+      <h2>BibTeX</h2>
+      <p class="muted">If you use AgentFinVQA in your research, please cite:</p>
+      <div class="bibtex-section">
+        <button class="btn btn-small btn-copy" id="copyBibtex" type="button" aria-label="Copy BibTeX">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M4 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V2zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H6zM2 5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1h1v1a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1v1H2z"/>
+          </svg>
+          Copy BibTeX
+        </button>
+        <!-- TODO: fill in real citation details -->
+        <pre class="bibtex" id="bibtexBlock"><code>@article{narayanan2026agentfinvqa,
+  title   = {AgentFinVQA: A Multi-Agent Framework for Financial Chart Visual Question Answering},
+  author  = {Narayanan, Aravind and Raza, Shaina},
+  journal = {arXiv preprint arXiv:XXXX.XXXXX},
+  year    = {2026}
+}</code></pre>
+        <p class="copy-status" id="copyStatus" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <section id="acknowledgements" class="section">
+      <h2>Acknowledgements</h2>
+      <p>
+        Resources used in preparing this research were provided, in part, by the Province of Ontario
+        and the Government of Canada through CIFAR, as well as companies sponsoring the Vector Institute
+        (<a href="https://www.vectorinstitute.ai/#partners" target="_blank" rel="noreferrer">vectorinstitute.ai/#partners</a>).
+      </p>
+      <p style="margin-top: 1rem;">
+        This research was funded by the European Union's Horizon Europe research and innovation programme
+        under the <a href="https://aixpert-project.eu/" target="_blank" rel="noreferrer">AIXPERT project</a>
+        (Grant Agreement No.&nbsp;101214389), which aims to develop an agentic, multi-layered, GenAI-powered
+        framework for creating explainable, accountable, and transparent AI systems.
+      </p>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <a href="https://vectorinstitute.ai/" target="_blank" rel="noreferrer">
+        <img src="assets/VectorLogo_Black.png" alt="Vector Institute" class="footer-logo" />
+      </a>
+      <a href="https://aixpert-project.eu/" target="_blank" rel="noreferrer">
+        <img src="assets/AIXPERTLogo.png" alt="AIXPERT" class="footer-logo footer-logo--color" />
+      </a>
+      <p class="footer-text">
+        Built by the AI Engineering team at the <a href="https://vectorinstitute.ai/" target="_blank" rel="noreferrer">Vector Institute</a>
+        &nbsp;·&nbsp; © 2026 &nbsp;·&nbsp;
+        <a href="https://github.com/VectorInstitute/AgentFinVQA" target="_blank" rel="noreferrer">GitHub</a>
+      </p>
+    </div>
+  </footer>
+</body>
+</html>
