@@ -8,7 +8,7 @@
 
 **AgentFinVQA** is a multi-agent framework that helps vision-language models answer questions about financial charts more accurately. Rather than asking a single model to do everything at once, it breaks the task into specialized steps — reading chart text, planning what to look for, answering the question, and verifying the answer — producing measurably better results than a single-pass approach.
 
-![Teaser](docs/assets/Teaser.jpeg)
+![Teaser](docs/assets/Teaser_v2.png)
 
 ## How it works
 
