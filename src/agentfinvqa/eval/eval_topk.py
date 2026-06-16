@@ -6,7 +6,7 @@ metrics.
 
 Usage:
     uv run --env-file .env -m agentfinvqa.eval.eval_topk \
-        --mep_dir meps/openai_openai/chartqapro/test \
+        --mep_dir meps/gemini_gemini/finmme/train \
         --out topk_metrics.jsonl \
         --backend openai \
         --model gpt-4o \

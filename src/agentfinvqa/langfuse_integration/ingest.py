@@ -4,7 +4,7 @@ This lets you visualise runs that completed before Langfuse was wired in.
 
 Usage:
     python -m agentfinvqa.langfuse_integration.ingest \
-        --mep_dir meps/openai_openai/chartqapro/test \
+        --mep_dir meps/gemini_gemini/finmme/train \
         [--metrics_file metrics.jsonl]
 """
 

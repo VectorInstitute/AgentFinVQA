@@ -6,7 +6,7 @@ diagnosis of the failure mode.
 
 Usage:
     uv run --env-file .env -m agentfinvqa.eval.error_taxonomy \\
-        --mep_dir meps/openai_openai/chartqapro/test \\
+        --mep_dir meps/gemini_gemini/finmme/train \\
         --metrics_file metrics.jsonl \\
         --out taxonomy.jsonl
 """

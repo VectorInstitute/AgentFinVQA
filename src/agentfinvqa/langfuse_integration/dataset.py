@@ -42,8 +42,8 @@ DATASET_LOADERS: dict[str, DatasetLoaderConfig] = {
 
 def register_dataset(
     samples: Sequence[PerceivedSample],
-    dataset_name: str = "ChartQAPro",
-    split: str = "test",
+    dataset_name: str = "FinMME",
+    split: str = "train",
 ) -> Optional[str]:
     """
     Upload a collection of samples as a Langfuse Dataset.
@@ -54,7 +54,7 @@ def register_dataset(
     ----------
     samples : list of PerceivedSample
         The data samples to register.
-    dataset_name : str, default 'ChartQAPro'
+    dataset_name : str, default 'FinMME'
         The base name for the dataset.
     split : str, default 'test'
         The split identifier (e.g., 'train', 'val').
@@ -99,7 +99,7 @@ def main() -> None:
     None
     """
     parser = argparse.ArgumentParser(description="Register dataset samples as Langfuse dataset")
-    parser.add_argument("--dataset", default="chartqapro", choices=sorted(DATASET_LOADERS.keys()))
+    parser.add_argument("--dataset", default="finmme", choices=sorted(DATASET_LOADERS.keys()))
     parser.add_argument("--split", default="test")
     parser.add_argument("--n", type=int, default=25)
     parser.add_argument("--image_dir", default=None)

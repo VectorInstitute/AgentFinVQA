@@ -1,11 +1,11 @@
-r"""Runner: generate Model Evaluation Packets (MEPs) for ChartQAPro.
+r"""Runner: generate Model Evaluation Packets (MEPs) for financial chart VQA.
 
 Usage:
     uv run --env-file .env -m agentfinvqa.runner.run_generate_meps \\
-        --dataset chartqapro \\
-        --split test \\
+        --dataset finmme \\
+        --split "train[:200]" \\
         --n 200 \\
-        --config openai_gemini \\
+        --config gemini_gemini \\
         --workers 8 \\
         --out meps/
 """
@@ -741,7 +741,7 @@ def main() -> None:  # noqa: PLR0912, PLR0915
     parser = argparse.ArgumentParser(description="Generate MEPs for supported financial VQA datasets")
     parser.add_argument(
         "--dataset",
-        default="chartqapro",
+        default="finmme",
         choices=sorted(DATASET_CONFIGS.keys()),
         help="Dataset name",
     )

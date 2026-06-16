@@ -38,7 +38,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 st.set_page_config(
-    page_title="ChartQAPro Eval Dashboard",
+    page_title="AgentFinVQA Eval Dashboard",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -85,7 +85,7 @@ def load_meps(mep_dir: str) -> dict:
 # Sidebar: configuration  # noqa: ERA001
 # ---------------------------------------------------------------------------
 
-st.sidebar.title("📊 ChartQAPro Eval")
+st.sidebar.title("📊 AgentFinVQA Eval")
 st.sidebar.markdown("---")
 st.sidebar.subheader("Data Paths")
 
@@ -143,7 +143,7 @@ def sidebar_path_picker(label: str, default: str, options: list[str], help_text:
 
 mep_dir_input = sidebar_path_picker(
     "MEP directory",
-    default="meps/gemini_gemini/chartqapro/test",
+    default="meps/gemini_gemini/finmme/train",
     options=_list_mep_dirs(),
     help_text="Directory containing .json MEP files",
 )
@@ -211,7 +211,7 @@ if df_tax is not None and "failure_type" in df_tax.columns:
 selected_failures = st.sidebar.multiselect("Failure types (taxonomy)", options=failure_types, default=failure_types)
 
 st.sidebar.markdown("---")
-st.sidebar.caption("agentfinvqa · ChartQAPro Dashboard")
+st.sidebar.caption("agentfinvqa · FinMME Dashboard")
 
 
 # ---------------------------------------------------------------------------

@@ -1,1 +1,1 @@
-"""Evaluation logic and taxonomy for ChartQAPro assessment."""
+"""Evaluation logic and taxonomy for financial chart VQA assessment."""

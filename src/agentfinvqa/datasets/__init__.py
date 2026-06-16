@@ -1,1 +1,1 @@
-"""Dataset loaders and utilities for ChartQAPro evaluation."""
+"""Dataset loaders and utilities for financial chart VQA evaluation."""

@@ -1,1 +1,1 @@
-"""Agent implementations for ChartQAPro evaluation."""
+"""Agent implementations for financial chart VQA evaluation."""

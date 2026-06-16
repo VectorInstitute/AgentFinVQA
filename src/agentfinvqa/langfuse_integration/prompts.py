@@ -16,8 +16,8 @@ from .client import get_client
 
 
 # Prompt names as stored in Langfuse Prompt Management
-PLANNER_PROMPT_NAME = "chartqapro_planner"
-VISION_PROMPT_NAME = "chartqapro_vision"
+PLANNER_PROMPT_NAME = "finmme_planner"
+VISION_PROMPT_NAME = "finmme_vision"
 
 
 def get_prompt(name: str, fallback_path: Path) -> str:

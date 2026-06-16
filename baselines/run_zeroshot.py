@@ -2,8 +2,8 @@ r"""Zero-shot VLM baseline — single direct VLM call, no agent pipeline.
 
 Usage:
     .venv/bin/python baselines/run_zeroshot.py \
-        --dataset chartqapro \
-        --split test \
+        --dataset finmme \
+        --split "train[:200]" \
         --n 200 \
         --backend gemini \
         --model gemini-2.5-flash \

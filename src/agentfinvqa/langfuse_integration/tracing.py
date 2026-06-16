@@ -86,8 +86,8 @@ def sample_trace(
     question_type: str,
     config_name: str,
     run_id: str,
-    dataset_slug: str = "chartqapro",
-    project_name: str = "chartqapro-eval",
+    dataset_slug: str = "finmme",
+    project_name: str = "finmme-eval",
 ) -> Generator[Optional["_TraceHandle"], None, None]:
     """
     Context manager to create a Langfuse trace for a single sample.
@@ -108,9 +108,9 @@ def sample_trace(
         The evaluation configuration used.
     run_id : str
         The unique ID of the pipeline run.
-    dataset_slug : str, default 'chartqapro'
+    dataset_slug : str, default 'finmme'
         Dataset identifier for trace naming.
-    project_name : str, default 'chartqapro-eval'
+    project_name : str, default 'finmme-eval'
         Langfuse project identifier (ignored in v4; use SDK config).
 
     Yields

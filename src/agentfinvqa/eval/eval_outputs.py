@@ -2,7 +2,7 @@ r"""Pass 1: output-based evaluation — rule-based accuracy + LLM judge rubric.
 
 Usage:
     uv run --env-file .env -m agentfinvqa.eval.eval_outputs \\
-        --mep_dir meps/openai_gemini/chartqapro/test \\
+        --mep_dir meps/gemini_gemini/finmme/train \\
         --out metrics.jsonl
 """
 
