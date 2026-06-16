@@ -58,3 +58,7 @@ vllm_endpoint.txt
 scripts/run_finmme_batch.py
 scripts/run_finmme_batch.sh
 src/agentfinvqa/agents/prompts/planner_v1.txt
+
+# Anonymised branch — remove institution artifacts
+.github/
+docs/
