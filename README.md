@@ -23,17 +23,6 @@ Every run produces a **Model Evaluation Packet (MEP)** — a JSON file capturing
 
 ![Pipeline](docs/assets/AgentFinVQA_Pipeline.png)
 
-## Results
-
-Evaluated on [FinMME](https://huggingface.co/datasets/luojunyu/FinMME) (Luo et al.), a financial multimodal benchmark with 11,099 samples across 18 domains and 10 chart types:
-
-| Model | Zero-shot | AgentFinVQA | Improvement |
-|-------|-----------|-------------|-------------|
-| Gemini-3 Flash | x% | x% | **+x pp** |
-| Qwen3.6-27B-FP8 | x% | x% | **+x pp** |
-
-Both improvements are statistically significant (McNemar test, p < 0.001).
-
 ## Installation
 
 Requires [uv](https://github.com/astral-sh/uv). Install core dependencies:
@@ -98,7 +87,7 @@ uv run streamlit run src/agentfinvqa/eval/dashboard.py
 ```
 src/agentfinvqa/
 ├── agents/        # PlannerAgent, VisionAgent, VerifierAgent
-├── datasets/      # Dataset loaders (FinMME, ChartQAPro)
+├── datasets/      # Dataset loaders
 ├── eval/          # Metrics, evaluation scripts, Streamlit dashboard
 ├── mep/           # Model Evaluation Packet schema
 ├── runner/        # End-to-end pipeline runner
