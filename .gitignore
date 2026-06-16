@@ -53,3 +53,8 @@ logs/
 # Editor copies
 *copy*.ipynb
 vllm_endpoint.txt
+
+# Superseded / internal scripts (kept locally, not tracked)
+scripts/run_finmme_batch.py
+scripts/run_finmme_batch.sh
+src/agentfinvqa/agents/prompts/planner_v1.txt
