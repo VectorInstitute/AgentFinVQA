@@ -66,8 +66,7 @@
           </p>
 
           <div class="button-row">
-            <a class="btn btn-primary" href="#" target="_blank" rel="noreferrer">
-              <!-- TODO: replace href with arXiv link -->
+            <a class="btn btn-primary" href="https://arxiv.org/abs/2606.19782" target="_blank" rel="noreferrer">
               <i class="ai ai-arxiv btn-icon-fa"></i>
               arXiv
             </a>
@@ -91,7 +90,7 @@
         <div class="hero-figure">
           <figure>
             <img
-              src="assets/Teaser.jpeg"
+              src="assets/Teaser_final.png"
               alt="FinMME example: zero-shot selects one GNPA period; AgentFinVQA recovers the full multi-select answer via per-choice verification"
               class="teaser-img"
               width="1200"
@@ -402,12 +401,14 @@ uv run streamlit run src/agentfinvqa/eval/dashboard.py -- --mep-dir meps/</code>
           </svg>
           Copy BibTeX
         </button>
-        <!-- TODO: fill in real citation details -->
-        <pre class="bibtex" id="bibtexBlock"><code>@article{narayanan2026agentfinvqa,
-  title   = {AgentFinVQA: A Multi-Agent Framework for Financial Chart Visual Question Answering},
-  author  = {Narayanan, Aravind and Raza, Shaina},
-  journal = {arXiv preprint arXiv:XXXX.XXXXX},
-  year    = {2026}
+        <pre class="bibtex" id="bibtexBlock"><code>@misc{narayanan2026agentfinvqadeployablemultiagentpipeline,
+      title={AgentFinVQA: A Deployable Multi-Agent Pipeline for Auditable Financial Chart QA},
+      author={Aravind Narayanan and Shaina Raza},
+      year={2026},
+      eprint={2606.19782},
+      archivePrefix={arXiv},
+      primaryClass={cs.AI},
+      url={https://arxiv.org/abs/2606.19782},
 }</code></pre>
         <p class="copy-status" id="copyStatus" role="status" aria-live="polite"></p>
       </div>
